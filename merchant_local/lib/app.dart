@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'features/home/home_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/inventory/item_detail_screen.dart';
+import 'features/inventory/purchase_form_screen.dart';
+import 'features/inventory/sale_form_screen.dart';
+import 'features/inventory/item_register_screen.dart';
 
 final _router = GoRouter(
   initialLocation: '/',
@@ -14,6 +18,30 @@ final _router = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/item/:id',
+      builder: (context, state) => ItemDetailScreen(
+        itemId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: '/item/:id/purchase',
+      builder: (context, state) => PurchaseFormScreen(
+        itemId: state.pathParameters['id']!,
+        purchaseId: state.uri.queryParameters['edit'],
+      ),
+    ),
+    GoRoute(
+      path: '/item/:id/sale',
+      builder: (context, state) => SaleFormScreen(
+        itemId: state.pathParameters['id']!,
+        saleId: state.uri.queryParameters['edit'],
+      ),
+    ),
+    GoRoute(
+      path: '/register',
+      builder: (context, state) => const ItemRegisterScreen(),
     ),
   ],
 );

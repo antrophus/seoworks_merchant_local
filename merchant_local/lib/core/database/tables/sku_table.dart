@@ -1,7 +1,8 @@
 import 'package:drift/drift.dart';
 
 /// 포이즌 SKU/SPU 로컬 캐시 테이블
-class SkuItems extends Table {
+@DataClassName('PoizonSkuCacheData')
+class PoizonSkuCache extends Table {
   TextColumn get id => text()(); // DW skuId
   TextColumn get spuId => text()();
   TextColumn get globalSkuId => text().nullable()();

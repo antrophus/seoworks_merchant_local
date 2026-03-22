@@ -1,13 +1,15 @@
 import 'package:drift/drift.dart';
 
-/// 리스팅 로컬 캐시 테이블
-class Listings extends Table {
+/// 포이즌 리스팅 로컬 캐시 테이블
+@DataClassName('PoizonListingData')
+class PoizonListings extends Table {
   TextColumn get bidId => text()(); // 포이즌 bidId
   TextColumn get skuId => text()();
   IntColumn get price => integer()();
   IntColumn get quantity => integer()();
   TextColumn get status => text()(); // active, cancelled, sold
-  TextColumn get listingType => text()(); // ship_to_verify, consignment, pre_sale
+  TextColumn get listingType =>
+      text()(); // ship_to_verify, consignment, pre_sale
   TextColumn get countryCode => text()();
   TextColumn get currency => text().withDefault(const Constant('KRW'))();
   TextColumn get hlc => text()(); // CRDT HLC 타임스탬프

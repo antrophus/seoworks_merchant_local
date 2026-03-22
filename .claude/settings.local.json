@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"E:/Users/antro/AppData/Local/Programs/flutter/bin/flutter\" pub:*)",
+      "Bash(\"E:/Users/antro/AppData/Local/Programs/flutter/bin/flutter.bat\" pub:*)",
+      "Bash(\"E:/Users/antro/AppData/Local/Programs/flutter/bin/flutter.bat\" build:*)",
+      "Bash(cmd //c \"flutter analyze lib/features/inventory/item_register_screen.dart 2>&1\")",
+      "Bash(where.exe flutter:*)",
+      "Read(//d/dev/2026/my_project/seoworks_merchant_local/merchant_local/$LOCALAPPDATA/**)",
+      "Read(//d/dev/**)",
+      "Read(//c//**)"
+    ]
+  }
+}

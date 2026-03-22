@@ -1,7 +1,8 @@
 import 'package:drift/drift.dart';
 
-/// 주문 로컬 캐시 테이블
-class Orders extends Table {
+/// 포이즌 주문 로컬 캐시 테이블
+@DataClassName('PoizonOrderData')
+class PoizonOrders extends Table {
   TextColumn get orderId => text()();
   TextColumn get skuId => text()();
   TextColumn get status => text()(); // pending, confirmed, shipped, completed
