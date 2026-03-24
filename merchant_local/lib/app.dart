@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'core/theme/app_theme.dart';
 import 'features/home/home_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/inventory/item_detail_screen.dart';
@@ -41,7 +42,13 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/register',
-      builder: (context, state) => const ItemRegisterScreen(),
+      builder: (context, state) => ItemRegisterScreen(
+        prefillBrand: state.uri.queryParameters['brand'],
+        prefillModelCode: state.uri.queryParameters['modelCode'],
+        prefillModelName: state.uri.queryParameters['modelName'],
+        prefillSizeKr: state.uri.queryParameters['sizeKr'],
+        prefillCategory: state.uri.queryParameters['category'],
+      ),
     ),
   ],
 );
@@ -54,17 +61,8 @@ class MerchantApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Merchant Local',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1A1A2E)),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1A1A2E),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
       routerConfig: _router,
     );
   }

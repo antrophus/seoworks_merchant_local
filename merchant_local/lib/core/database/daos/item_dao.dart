@@ -122,17 +122,19 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
   }
 
   /// SKU / 바코드 / 모델코드 검색
-  Future<List<ItemData>> search(String query) async {
+  Future<List<ItemData>> search(String query, {List<String>? statuses}) async {
     final pattern = '%$query%';
     final result = select(items).join([
       innerJoin(products, products.id.equalsExp(items.productId)),
     ]);
-    result.where(
-      items.sku.like(pattern) |
-          items.barcode.like(pattern) |
-          products.modelCode.like(pattern) |
-          products.modelName.like(pattern),
-    );
+    var condition = items.sku.like(pattern) |
+        items.barcode.like(pattern) |
+        products.modelCode.like(pattern) |
+        products.modelName.like(pattern);
+    if (statuses != null && statuses.isNotEmpty) {
+      condition = condition & items.currentStatus.isIn(statuses);
+    }
+    result.where(condition);
     result.orderBy([OrderingTerm.desc(items.createdAt)]);
     result.limit(50);
     final rows = await result.get();

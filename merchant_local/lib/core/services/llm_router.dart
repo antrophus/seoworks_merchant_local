@@ -262,6 +262,12 @@ class LlmRouter {
 확실하지 않은 필드는 null로 응답하세요.
 ''';
 
+  // ── 모델코드 정규화: 공백→하이픈, 연속 하이픈 제거 ──
+  String? _normalizeModelCode(String? code) {
+    if (code == null || code.isEmpty) return code;
+    return code.trim().replaceAll(RegExp(r'\s+'), '-').replaceAll(RegExp(r'-{2,}'), '-');
+  }
+
   // ── 응답 파싱 ──
 
   ProductRecognitionResult _parseResponse(String raw, String providerName) {
@@ -277,7 +283,7 @@ class LlmRouter {
       final map = jsonDecode(jsonStr) as Map<String, dynamic>;
       return ProductRecognitionResult(
         brand: map['brand'] as String?,
-        modelCode: map['model_code'] as String?,
+        modelCode: _normalizeModelCode(map['model_code'] as String?),
         modelName: map['model_name'] as String?,
         sizeKr: map['size_kr']?.toString(),
         barcode: map['barcode']?.toString(),

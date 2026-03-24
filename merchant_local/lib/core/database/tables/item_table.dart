@@ -21,6 +21,7 @@ class Items extends Table {
   TextColumn get defectNote => text().nullable()();
   TextColumn get note => text().nullable()();
   TextColumn get poizonSkuId => text().nullable()();
+  TextColumn get poizonStorageFrom => text().nullable()(); // 보관판매 시작일
   TextColumn get createdAt => text().nullable()();
   TextColumn get updatedAt => text().nullable()();
 

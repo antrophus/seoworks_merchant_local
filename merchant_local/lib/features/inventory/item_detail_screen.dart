@@ -1,14 +1,17 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
+import '../../core/theme/app_theme.dart';
 import 'status_actions.dart';
 
 final _numFmt = NumberFormat('#,###');
 
-/// 아이템 상세 Provider
+// ── Providers ──
+
 final _itemProvider = FutureProvider.family<ItemData?, String>((ref, id) {
   return ref.watch(itemDaoProvider).getById(id);
 });
@@ -16,6 +19,13 @@ final _itemProvider = FutureProvider.family<ItemData?, String>((ref, id) {
 final _purchaseProvider =
     FutureProvider.family<PurchaseData?, String>((ref, itemId) {
   return ref.watch(purchaseDaoProvider).getByItemId(itemId);
+});
+
+final _sourceProvider =
+    FutureProvider.family<Source?, String>((ref, sourceId) async {
+  final sources = await ref.watch(masterDaoProvider).getAllSources();
+  return sources.cast<Source?>().firstWhere((s) => s!.id == sourceId,
+      orElse: () => null);
 });
 
 final _saleProvider =
@@ -49,13 +59,11 @@ final _repairsProvider =
   return ref.watch(subRecordDaoProvider).getRepairs(itemId);
 });
 
-/// 상품 정보 Provider
 final _productProvider =
     FutureProvider.family<Product?, String>((ref, productId) {
   return ref.watch(masterDaoProvider).getProductById(productId);
 });
 
-/// 브랜드 정보 Provider
 final _brandProvider =
     FutureProvider.family<Brand?, String>((ref, brandId) {
   return ref.watch(masterDaoProvider).getBrandById(brandId);
@@ -81,22 +89,6 @@ const _statusLabels = <String, String>{
   'REPAIRING': '수선중',
 };
 
-Color _statusColor(String status) => switch (status) {
-      'ORDER_PLACED' => Colors.orange,
-      'OFFICE_STOCK' => Colors.blue,
-      'OUTGOING' => Colors.indigo,
-      'IN_INSPECTION' => Colors.purple,
-      'LISTED' => Colors.teal,
-      'SOLD' => Colors.green,
-      'SETTLED' => Colors.grey,
-      'RETURNING' => Colors.red,
-      'DEFECT_FOR_SALE' || 'DEFECT_SOLD' => Colors.amber,
-      'DEFECT_SETTLED' => Colors.grey,
-      'DEFECT_HELD' => Colors.deepOrange,
-      'REPAIRING' => Colors.brown,
-      _ => Colors.blueGrey,
-    };
-
 class ItemDetailScreen extends ConsumerWidget {
   final String itemId;
   const ItemDetailScreen({super.key, required this.itemId});
@@ -106,7 +98,6 @@ class ItemDetailScreen extends ConsumerWidget {
     final itemAsync = ref.watch(_itemProvider(itemId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('아이템 상세')),
       body: itemAsync.when(
         data: (item) {
           if (item == null) {
@@ -122,7 +113,7 @@ class ItemDetailScreen extends ConsumerWidget {
           if (item == null) return null;
           final actions = statusActions[item.currentStatus];
           if (actions == null || actions.isEmpty) return null;
-          return FloatingActionButton.extended(
+          return FloatingActionButton(
             onPressed: () async {
               final result = await showStatusActionSheet(
                 context: context,
@@ -139,8 +130,8 @@ class ItemDetailScreen extends ConsumerWidget {
                 ref.invalidate(_repairsProvider);
               }
             },
-            icon: const Icon(Icons.swap_horiz),
-            label: const Text('상태 변경'),
+            tooltip: '상태 변경',
+            child: const Icon(Icons.swap_vert_rounded),
           );
         },
       ),
@@ -164,399 +155,460 @@ class _ItemDetailBody extends ConsumerWidget {
 
     final statusLabel =
         _statusLabels[item.currentStatus] ?? item.currentStatus;
-    final statusClr = _statusColor(item.currentStatus);
+    final statusClr = statusColor(item.currentStatus);
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // ── 기본 정보 카드 ──
-        Card(
+    return CustomScrollView(
+      slivers: [
+        // ── 이미지 히어로 영역 (SliverAppBar + 플로팅 정보) ──
+        SliverAppBar(
+          expandedHeight: 320,
+          pinned: true,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          foregroundColor: AppColors.textPrimary,
+          surfaceTintColor: Colors.transparent,
+          leading: IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(200),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.arrow_back, size: 20),
+            ),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          flexibleSpace: FlexibleSpaceBar(
+            background: productAsync.when(
+              data: (product) => _HeroImage(
+                imageUrl: product?.imageUrl,
+                modelCode: product?.modelCode,
+                modelName: product?.modelName,
+                sizeKr: item.sizeKr,
+                sizeEu: item.sizeEu,
+                statusLabel: statusLabel,
+                statusColor: statusClr,
+              ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+
+        // ── 상품 기본 정보 ──
+        SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 상품 이미지
-                productAsync.when(
-                  data: (product) {
-                    final url = product?.imageUrl;
-                    if (url == null) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          url, height: 120, fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                        ),
-                      ),
-                    );
-                  },
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
-
-                Row(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: productAsync.when(
+              data: (product) {
+                if (product == null) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        item.sku,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                    // 모델코드만 표시
+                    Text(
+                      product.modelCode,
+                      style: AppTheme.dataStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusClr.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        statusLabel,
-                        style: TextStyle(
-                          color: statusClr,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // 상품 정보
-                productAsync.when(
-                  data: (product) {
-                    if (product == null) return const SizedBox.shrink();
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: AppSpacing.sm),
+                    // 브랜드 · 카테고리 · 사이즈
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: 4,
                       children: [
-                        _InfoRow('모델', '${product.modelName} (${product.modelCode})'),
                         if (product.brandId != null)
                           ref.watch(_brandProvider(product.brandId!)).when(
                                 data: (brand) => brand != null
-                                    ? _InfoRow('브랜드', brand.name)
+                                    ? _InfoChip(brand.name)
                                     : const SizedBox.shrink(),
                                 loading: () => const SizedBox.shrink(),
                                 error: (_, __) => const SizedBox.shrink(),
                               ),
                         if (product.category != null)
-                          _InfoRow('카테고리', product.category!),
+                          _InfoChip(product.category!),
+                        _InfoChip(
+                          [
+                            'KR ${item.sizeKr}',
+                            if (item.sizeEu != null) 'EU ${item.sizeEu}',
+                            if (item.sizeUs != null) 'US ${item.sizeUs}',
+                          ].join(' / '),
+                        ),
                       ],
-                    );
-                  },
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
-
-                _InfoRow('사이즈', [
-                  'KR ${item.sizeKr}',
-                  if (item.sizeEu != null) 'EU ${item.sizeEu}',
-                  if (item.sizeUs != null) 'US ${item.sizeUs}',
-                ].join(' / ')),
-                if (item.barcode != null) _InfoRow('바코드', item.barcode!),
-                if (item.isPersonal) _InfoRow('구분', '개인용'),
-                if (item.defectNote != null)
-                  _InfoRow('불량메모', item.defectNote!),
-                if (item.note != null) _InfoRow('비고', item.note!),
-              ],
+                    ),
+                    if (item.barcode != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        '바코드: ${item.barcode}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    if (item.isPersonal)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withAlpha(20),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text('개인용',
+                              style: TextStyle(
+                                  color: AppColors.accent, fontSize: 11)),
+                        ),
+                      ),
+                    if (item.defectNote != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('불량: ${item.defectNote}',
+                            style: const TextStyle(
+                                color: AppColors.error, fontSize: 12)),
+                      ),
+                    if (item.note != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('비고: ${item.note}',
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                  ],
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
             ),
           ),
         ),
-        const SizedBox(height: 12),
+
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
 
         // ── 매입 정보 ──
-        purchaseAsync.when(
-          data: (purchase) {
-            if (purchase == null) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final result =
-                        await context.push('/item/${item.id}/purchase');
-                    if (result == true) ref.invalidate(_purchaseProvider);
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('매입 등록'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: purchaseAsync.when(
+              data: (purchase) {
+                if (purchase == null) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final result =
+                            await context.push('/item/${item.id}/purchase');
+                        if (result == true) ref.invalidate(_purchaseProvider);
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('매입 등록'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(44),
+                      ),
+                    ),
+                  );
+                }
+                return _SectionCard(
+                  title: '매입 정보',
+                  icon: Icons.shopping_cart_outlined,
+                  color: AppColors.primary,
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    tooltip: '매입 수정',
+                    onPressed: () async {
+                      final result = await context
+                          .push('/item/${item.id}/purchase?edit=${purchase.id}');
+                      if (result == true) ref.invalidate(_purchaseProvider);
+                    },
                   ),
-                ),
-              );
-            }
-            return _SectionCard(
-              title: '매입 정보',
-              icon: Icons.shopping_cart,
-              color: Colors.blue,
-              trailing: IconButton(
-                icon: const Icon(Icons.edit, size: 18),
-                tooltip: '매입 수정',
-                onPressed: () async {
-                  final result = await context
-                      .push('/item/${item.id}/purchase?edit=${purchase.id}');
-                  if (result == true) ref.invalidate(_purchaseProvider);
-                },
-              ),
-              children: [
-                if (purchase.purchasePrice != null)
-                  _InfoRow('매입가', '${_numFmt.format(purchase.purchasePrice)}원'),
-                _InfoRow('결제수단', _paymentLabel(purchase.paymentMethod)),
-                if (purchase.purchaseDate != null)
-                  _InfoRow('매입일', purchase.purchaseDate!),
-                if (purchase.vatRefundable != null &&
-                    purchase.vatRefundable! > 0)
-                  _InfoRow('부가세 환급',
-                      '${_numFmt.format(purchase.vatRefundable!.round())}원'),
-                if (purchase.memo != null) _InfoRow('메모', purchase.memo!),
-              ],
-            );
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
+                  children: [
+                    if (purchase.purchasePrice != null)
+                      _InfoRow('매입가',
+                          '${_numFmt.format(purchase.purchasePrice)}원'),
+                    _InfoRow('결제수단', _paymentLabel(purchase.paymentMethod)),
+                    if (purchase.sourceId != null)
+                      _SourceRow(sourceId: purchase.sourceId!),
+                    if (purchase.purchaseDate != null)
+                      _InfoRow('매입일', purchase.purchaseDate!),
+                    if (purchase.vatRefundable != null &&
+                        purchase.vatRefundable! > 0)
+                      _InfoRow('부가세 환급',
+                          '${_numFmt.format(purchase.vatRefundable!.round())}원'),
+                    if (purchase.memo != null) _InfoRow('메모', purchase.memo!),
+                  ],
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
         ),
 
         // ── 판매 정보 ──
-        saleAsync.when(
-          data: (sale) {
-            if (sale == null) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final result =
-                        await context.push('/item/${item.id}/sale');
-                    if (result == true) ref.invalidate(_saleProvider);
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('판매 등록'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
-                  ),
-                ),
-              );
-            }
-
-            // 수익 계산
-            final profitWidgets = <Widget>[];
-            final purchaseData = ref.watch(_purchaseProvider(item.id));
-            purchaseData.whenData((purchase) {
-              if (purchase?.purchasePrice != null &&
-                  sale.settlementAmount != null) {
-                final profit = sale.settlementAmount! -
-                    purchase!.purchasePrice! +
-                    (purchase.vatRefundable?.round() ?? 0);
-                final marginRate = purchase.purchasePrice! > 0
-                    ? (profit / purchase.purchasePrice! * 100)
-                    : 0.0;
-                final profitColor = profit >= 0 ? Colors.green : Colors.red;
-                profitWidgets.addAll([
-                  _InfoRow('수익', '${_numFmt.format(profit)}원',
-                      valueColor: profitColor),
-                  _InfoRow(
-                      '수익률', '${marginRate.toStringAsFixed(1)}%',
-                      valueColor: profitColor),
-                ]);
-              }
-            });
-
-            return _SectionCard(
-              title: '판매 정보',
-              icon: Icons.sell,
-              color: Colors.green,
-              trailing: IconButton(
-                icon: const Icon(Icons.edit, size: 18),
-                tooltip: '판매 수정',
-                onPressed: () async {
-                  final result = await context
-                      .push('/item/${item.id}/sale?edit=${sale.id}');
-                  if (result == true) ref.invalidate(_saleProvider);
-                },
-              ),
-              children: [
-                _InfoRow('플랫폼', sale.platform),
-                if (sale.listedPrice != null)
-                  _InfoRow('등록가', '${_numFmt.format(sale.listedPrice)}원'),
-                if (sale.sellPrice != null)
-                  _InfoRow('판매가', '${_numFmt.format(sale.sellPrice)}원'),
-                if (sale.platformFee != null)
-                  _InfoRow('수수료',
-                      '${_numFmt.format(sale.platformFee)}원 (${((sale.platformFeeRate ?? 0) * 100).toStringAsFixed(1)}%)'),
-                if (sale.adjustmentTotal != 0)
-                  _InfoRow(
-                      '조정금', '${_numFmt.format(sale.adjustmentTotal)}원'),
-                if (sale.settlementAmount != null)
-                  _InfoRow('정산금',
-                      '${_numFmt.format(sale.settlementAmount)}원',
-                      valueColor: Colors.green),
-                ...profitWidgets,
-                if (sale.saleDate != null) _InfoRow('판매일', sale.saleDate!),
-                if (sale.outgoingDate != null)
-                  _InfoRow('발송일', sale.outgoingDate!),
-                if (sale.settledAt != null) _InfoRow('정산일', sale.settledAt!),
-                if (sale.trackingNumber != null)
-                  _InfoRow('운송장', sale.trackingNumber!),
-                if (sale.memo != null) _InfoRow('메모', sale.memo!),
-
-                // 조정금 상세
-                if (sale.adjustmentTotal != 0)
-                  ref.watch(_adjustmentsProvider(sale.id)).when(
-                        data: (adjustments) {
-                          if (adjustments.isEmpty) {
-                            return const SizedBox.shrink();
-                          }
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Divider(),
-                              Text('조정금 내역',
-                                  style:
-                                      Theme.of(context).textTheme.labelSmall),
-                              for (final adj in adjustments)
-                                _InfoRow(
-                                  adj.type,
-                                  '${_numFmt.format(adj.amount)}원${adj.memo != null ? ' (${adj.memo})' : ''}',
-                                ),
-                            ],
-                          );
-                        },
-                        loading: () => const SizedBox.shrink(),
-                        error: (_, __) => const SizedBox.shrink(),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: saleAsync.when(
+              data: (sale) {
+                if (sale == null) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final result =
+                            await context.push('/item/${item.id}/sale');
+                        if (result == true) ref.invalidate(_saleProvider);
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('판매 등록'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(44),
                       ),
-              ],
-            );
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
+                    ),
+                  );
+                }
+
+                final profitWidgets = <Widget>[];
+                final purchaseData = ref.watch(_purchaseProvider(item.id));
+                purchaseData.whenData((purchase) {
+                  if (purchase?.purchasePrice != null &&
+                      sale.settlementAmount != null) {
+                    final profit = sale.settlementAmount! -
+                        purchase!.purchasePrice! +
+                        (purchase.vatRefundable?.round() ?? 0);
+                    final marginRate = purchase.purchasePrice! > 0
+                        ? (profit / purchase.purchasePrice! * 100)
+                        : 0.0;
+                    final profitColor =
+                        profit >= 0 ? AppColors.success : AppColors.error;
+                    profitWidgets.addAll([
+                      _InfoRow('수익', '${_numFmt.format(profit)}원',
+                          valueColor: profitColor),
+                      _InfoRow('수익률', '${marginRate.toStringAsFixed(1)}%',
+                          valueColor: profitColor),
+                    ]);
+                  }
+                });
+
+                return _SectionCard(
+                  title: '판매 정보',
+                  icon: Icons.sell_outlined,
+                  color: AppColors.success,
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    tooltip: '판매 수정',
+                    onPressed: () async {
+                      final result = await context
+                          .push('/item/${item.id}/sale?edit=${sale.id}');
+                      if (result == true) ref.invalidate(_saleProvider);
+                    },
+                  ),
+                  children: [
+                    _InfoRow('플랫폼', sale.platform),
+                    if (sale.listedPrice != null)
+                      _InfoRow('등록가', '${_numFmt.format(sale.listedPrice)}원'),
+                    if (sale.sellPrice != null)
+                      _InfoRow('판매가', '${_numFmt.format(sale.sellPrice)}원'),
+                    if (sale.platformFee != null)
+                      _InfoRow('수수료',
+                          '${_numFmt.format(sale.platformFee)}원 (${((sale.platformFeeRate ?? 0) * 100).toStringAsFixed(1)}%)'),
+                    if (sale.adjustmentTotal != 0)
+                      _InfoRow(
+                          '조정금', '${_numFmt.format(sale.adjustmentTotal)}원'),
+                    if (sale.settlementAmount != null)
+                      _InfoRow(
+                          '정산금', '${_numFmt.format(sale.settlementAmount)}원',
+                          valueColor: AppColors.success),
+                    ...profitWidgets,
+                    if (sale.saleDate != null) _InfoRow('판매일', sale.saleDate!),
+                    if (sale.outgoingDate != null)
+                      _InfoRow('발송일', sale.outgoingDate!),
+                    if (sale.settledAt != null)
+                      _InfoRow('정산일', sale.settledAt!),
+                    if (sale.trackingNumber != null)
+                      _InfoRow('운송장', sale.trackingNumber!),
+                    if (sale.memo != null) _InfoRow('메모', sale.memo!),
+                    if (sale.adjustmentTotal != 0)
+                      ref.watch(_adjustmentsProvider(sale.id)).when(
+                            data: (adjustments) {
+                              if (adjustments.isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Divider(),
+                                  Text('조정금 내역',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall),
+                                  for (final adj in adjustments)
+                                    _InfoRow(
+                                      adj.type,
+                                      '${_numFmt.format(adj.amount)}원${adj.memo != null ? ' (${adj.memo})' : ''}',
+                                    ),
+                                ],
+                              );
+                            },
+                            loading: () => const SizedBox.shrink(),
+                            error: (_, __) => const SizedBox.shrink(),
+                          ),
+                  ],
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
         ),
 
         // ── 배송 이력 ──
-        shipmentsAsync.when(
-          data: (shipments) {
-            if (shipments.isEmpty) return const SizedBox.shrink();
-            return _SectionCard(
-              title: '배송 이력 (${shipments.length}건)',
-              icon: Icons.local_shipping,
-              color: Colors.indigo,
-              children: [
-                for (final s in shipments)
-                  _InfoRow(
-                    '#${s.seq} ${s.platform ?? ''}',
-                    '${s.trackingNumber}${s.outgoingDate != null ? ' · ${s.outgoingDate}' : ''}',
-                  ),
-              ],
-            );
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: shipmentsAsync.when(
+              data: (shipments) {
+                if (shipments.isEmpty) return const SizedBox.shrink();
+                return _SectionCard(
+                  title: '배송 이력 (${shipments.length}건)',
+                  icon: Icons.local_shipping_outlined,
+                  color: AppColors.statusOutgoing,
+                  children: [
+                    for (final s in shipments)
+                      _InfoRow(
+                        '#${s.seq} ${s.platform ?? ''}',
+                        '${s.trackingNumber}${s.outgoingDate != null ? ' · ${s.outgoingDate}' : ''}',
+                      ),
+                  ],
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
         ),
 
         // ── 검수 반려 ──
-        inspectionsAsync.when(
-          data: (inspections) {
-            if (inspections.isEmpty) return const SizedBox.shrink();
-            return _SectionCard(
-              title: '검수 반려 (${inspections.length}건)',
-              icon: Icons.warning,
-              color: Colors.amber,
-              children: [
-                for (final ir in inspections) ...[
-                  _InfoRow('#${ir.returnSeq} 반려일', ir.rejectedAt),
-                  if (ir.reason != null) _InfoRow('사유', ir.reason!),
-                  if (ir.defectType != null) _InfoRow('유형', ir.defectType!),
-                  if (ir.discountAmount != null)
-                    _InfoRow('할인', '${_numFmt.format(ir.discountAmount)}원'),
-                  if (ir.memo != null) _InfoRow('메모', ir.memo!),
-                  if (inspections.last != ir) const Divider(height: 12),
-                ],
-              ],
-            );
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: inspectionsAsync.when(
+              data: (inspections) {
+                if (inspections.isEmpty) return const SizedBox.shrink();
+                return _SectionCard(
+                  title: '검수 반려 (${inspections.length}건)',
+                  icon: Icons.warning_amber_outlined,
+                  color: AppColors.warning,
+                  children: [
+                    for (final ir in inspections) ...[
+                      _InfoRow('#${ir.returnSeq} 반려일', ir.rejectedAt),
+                      if (ir.reason != null) _InfoRow('사유', ir.reason!),
+                      if (ir.defectType != null) _InfoRow('유형', ir.defectType!),
+                      if (ir.discountAmount != null)
+                        _InfoRow(
+                            '할인', '${_numFmt.format(ir.discountAmount)}원'),
+                      if (ir.memo != null) _InfoRow('메모', ir.memo!),
+                      if (inspections.last != ir) const Divider(height: 12),
+                    ],
+                  ],
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
         ),
 
         // ── 수선 이력 ──
-        repairsAsync.when(
-          data: (repairs) {
-            if (repairs.isEmpty) return const SizedBox.shrink();
-            return _SectionCard(
-              title: '수선 이력 (${repairs.length}건)',
-              icon: Icons.build,
-              color: Colors.brown,
-              children: [
-                for (final r in repairs) ...[
-                  _InfoRow('시작', r.startedAt),
-                  if (r.completedAt != null) _InfoRow('완료', r.completedAt!),
-                  if (r.repairCost != null)
-                    _InfoRow('비용', '${_numFmt.format(r.repairCost)}원'),
-                  if (r.outcome != null) _InfoRow('결과', r.outcome!),
-                  if (r.repairNote != null) _InfoRow('메모', r.repairNote!),
-                  if (repairs.last != r) const Divider(height: 12),
-                ],
-              ],
-            );
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: repairsAsync.when(
+              data: (repairs) {
+                if (repairs.isEmpty) return const SizedBox.shrink();
+                return _SectionCard(
+                  title: '수선 이력 (${repairs.length}건)',
+                  icon: Icons.build_outlined,
+                  color: AppColors.statusRepairing,
+                  children: [
+                    for (final r in repairs) ...[
+                      _InfoRow('시작', r.startedAt),
+                      if (r.completedAt != null) _InfoRow('완료', r.completedAt!),
+                      if (r.repairCost != null)
+                        _InfoRow('비용', '${_numFmt.format(r.repairCost)}원'),
+                      if (r.outcome != null) _InfoRow('결과', r.outcome!),
+                      if (r.repairNote != null) _InfoRow('메모', r.repairNote!),
+                      if (repairs.last != r) const Divider(height: 12),
+                    ],
+                  ],
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
         ),
 
         // ── 상태 변경 이력 ──
-        statusLogsAsync.when(
-          data: (logs) {
-            if (logs.isEmpty) return const SizedBox.shrink();
-            return _SectionCard(
-              title: '상태 변경 이력 (${logs.length}건)',
-              icon: Icons.history,
-              color: Colors.grey,
-              children: [
-                for (final log in logs)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        if (log.oldStatus != null) ...[
-                          Text(
-                            _statusLabels[log.oldStatus] ?? log.oldStatus!,
-                            style: TextStyle(
-                              color: _statusColor(log.oldStatus!),
-                              fontSize: 12,
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: statusLogsAsync.when(
+              data: (logs) {
+                if (logs.isEmpty) return const SizedBox.shrink();
+                return _SectionCard(
+                  title: '상태 변경 이력 (${logs.length}건)',
+                  icon: Icons.history,
+                  color: AppColors.textTertiary,
+                  children: [
+                    for (final log in logs)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            if (log.oldStatus != null) ...[
+                              Text(
+                                _statusLabels[log.oldStatus] ?? log.oldStatus!,
+                                style: TextStyle(
+                                  color: statusColor(log.oldStatus!),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                child: Icon(Icons.arrow_forward,
+                                    size: 12, color: AppColors.textTertiary),
+                              ),
+                            ],
+                            Text(
+                              _statusLabels[log.newStatus] ?? log.newStatus,
+                              style: TextStyle(
+                                color: statusColor(log.newStatus),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Icon(Icons.arrow_forward,
-                                size: 12, color: Colors.grey),
-                          ),
-                        ],
-                        Text(
-                          _statusLabels[log.newStatus] ?? log.newStatus,
-                          style: TextStyle(
-                            color: _statusColor(log.newStatus),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
+                            const Spacer(),
+                            if (log.changedAt != null)
+                              Text(
+                                _formatDate(log.changedAt!),
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textTertiary),
+                              ),
+                          ],
                         ),
-                        const Spacer(),
-                        if (log.changedAt != null)
-                          Text(
-                            _formatDate(log.changedAt!),
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.grey),
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
-            );
-          },
-          loading: () => const SizedBox.shrink(),
-          error: (_, __) => const SizedBox.shrink(),
+                      ),
+                  ],
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ),
         ),
 
-        const SizedBox(height: 32),
+        const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ],
     );
   }
@@ -574,6 +626,162 @@ class _ItemDetailBody extends ConsumerWidget {
     return isoDate;
   }
 }
+
+// ── 히어로 이미지 + 플로팅 정보 오버레이 ──
+
+class _HeroImage extends StatelessWidget {
+  final String? imageUrl;
+  final String? modelCode;
+  final String? modelName;
+  final String sizeKr;
+  final String? sizeEu;
+  final String statusLabel;
+  final Color statusColor;
+
+  const _HeroImage({
+    this.imageUrl,
+    this.modelCode,
+    this.modelName,
+    required this.sizeKr,
+    this.sizeEu,
+    required this.statusLabel,
+    required this.statusColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 배경 이미지 (가득 채움)
+        if (imageUrl != null && imageUrl!.isNotEmpty)
+          CachedNetworkImage(
+            imageUrl: imageUrl!,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => Container(
+              color: AppColors.surfaceVariant,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+            errorWidget: (_, __, ___) => Container(
+              color: AppColors.surfaceVariant,
+              child: const Icon(Icons.inventory_2,
+                  size: 64, color: AppColors.textTertiary),
+            ),
+          )
+        else
+          Container(
+            color: AppColors.surfaceVariant,
+            child: const Icon(Icons.inventory_2,
+                size: 64, color: AppColors.textTertiary),
+          ),
+
+        // 하단 그라데이션 오버레이
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 160,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withAlpha(140),
+                  Colors.black.withAlpha(200),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // 플로팅 정보 레이어
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 상태 뱃지
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withAlpha(220),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // 모델명
+              if (modelName != null)
+                Text(
+                  modelName!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              const SizedBox(height: 4),
+
+              // 사이즈
+              Text(
+                'KR $sizeKr${sizeEu != null ? '  ·  EU $sizeEu' : ''}',
+                style: TextStyle(
+                  color: Colors.white.withAlpha(200),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── 정보 칩 (브랜드, 카테고리, 사이즈 등) ──
+
+class _InfoChip extends StatelessWidget {
+  final String text;
+  const _InfoChip(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+      ),
+    );
+  }
+}
+
+// ── 섹션 카드 ──
 
 class _SectionCard extends StatelessWidget {
   final String title;
@@ -626,6 +834,23 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
+class _SourceRow extends ConsumerWidget {
+  final String sourceId;
+  const _SourceRow({required this.sourceId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(_sourceProvider(sourceId));
+    return async.when(
+      data: (source) => source != null
+          ? _InfoRow('매입처', source.name)
+          : const SizedBox.shrink(),
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
@@ -647,7 +872,7 @@ class _InfoRow extends StatelessWidget {
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
-                  ?.copyWith(color: Colors.grey),
+                  ?.copyWith(color: AppColors.textTertiary),
             ),
           ),
           Expanded(

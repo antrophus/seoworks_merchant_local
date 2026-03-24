@@ -1,11 +1,15 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
+import '../../core/theme/app_theme.dart';
 
 const _uuid = Uuid();
 
@@ -23,7 +27,10 @@ const statusActions = <String, List<StatusAction>>{
   'OFFICE_STOCK': [
     StatusAction('리스팅 등록', 'LISTED', Icons.sell, Colors.teal,
         needsListing: true),
-    StatusAction('샘플 전환', 'SAMPLE', Icons.card_giftcard, Colors.pink),
+    StatusAction(
+        '공급처 반품', 'SUPPLIER_RETURN', Icons.undo, Colors.blueGrey,
+        needsReturn: true),
+    StatusAction('샘플/폐기', 'SAMPLE', Icons.card_giftcard, Colors.pink),
   ],
   'OUTGOING': [
     StatusAction('검수 도착', 'IN_INSPECTION', Icons.fact_check, Colors.purple),
@@ -40,15 +47,22 @@ const statusActions = <String, List<StatusAction>>{
     StatusAction(
         '검수 반려 (반송)', 'RETURNING', Icons.keyboard_return, Colors.red,
         needsInspection: true, defectType: 'DEFECT_RETURN'),
+    StatusAction(
+        '플랫폼취소 (보관판매)', 'POIZON_STORAGE', Icons.warehouse_outlined, Colors.teal,
+        needsInspection: true, defectType: 'PLATFORM_CANCEL'),
+    StatusAction(
+        '플랫폼취소 (반송)', 'CANCEL_RETURNING', Icons.local_shipping_outlined, Colors.indigo,
+        needsInspection: true, defectType: 'PLATFORM_CANCEL'),
   ],
   'LISTED': [
-    StatusAction('판매 확정 (오퍼 수락)', 'SOLD', Icons.check_circle, Colors.green,
-        needsSellPrice: true),
+    StatusAction('판매/발송 처리', 'OUTGOING', Icons.local_shipping, Colors.indigo,
+        needsSellAndShip: true),
     StatusAction('리스팅 취소 (사무실 복귀)', 'OFFICE_STOCK', Icons.warehouse, Colors.blue),
   ],
   'SOLD': [
     StatusAction('발송', 'OUTGOING', Icons.local_shipping, Colors.indigo,
         needsShipment: true),
+    StatusAction('판매 취소 (리스팅 복귀)', 'LISTED', Icons.undo, Colors.teal),
   ],
   'DEFECT_FOR_SALE': [
     StatusAction('불량 판매 완료', 'DEFECT_SOLD', Icons.check_circle, Colors.green),
@@ -66,6 +80,13 @@ const statusActions = <String, List<StatusAction>>{
         '공급처 반품', 'SUPPLIER_RETURN', Icons.undo, Colors.blueGrey,
         needsReturn: true),
     StatusAction('폐기', 'DISPOSED', Icons.delete_forever, Colors.red),
+  ],
+  'POIZON_STORAGE': [
+    StatusAction('보관판매 정산 완료', 'SETTLED', Icons.check_circle, Colors.green),
+    StatusAction('반송 전환 (90일 초과/포기)', 'CANCEL_RETURNING', Icons.local_shipping_outlined, Colors.indigo),
+  ],
+  'CANCEL_RETURNING': [
+    StatusAction('수취 완료 (재입고)', 'OFFICE_STOCK', Icons.warehouse, Colors.blue),
   ],
   'RETURNING': [
     StatusAction('사무실 도착 (재입고)', 'OFFICE_STOCK', Icons.warehouse, Colors.blue),
@@ -105,6 +126,7 @@ class StatusAction {
   final bool needsReturn;
   final bool needsListing;
   final bool needsSellPrice;
+  final bool needsSellAndShip;
 
   const StatusAction(
     this.label,
@@ -121,6 +143,7 @@ class StatusAction {
     this.needsReturn = false,
     this.needsListing = false,
     this.needsSellPrice = false,
+    this.needsSellAndShip = false,
   });
 }
 
@@ -197,7 +220,22 @@ Future<bool?> _executeAction({
   required ItemData item,
   required StatusAction action,
 }) async {
+  // 정산 전이 — sale 레코드에 saleDate/settledAt 자동 설정
+  if (action.targetStatus == 'SETTLED' || action.targetStatus == 'DEFECT_SETTLED') {
+    return _confirmAndSettle(
+      context: context,
+      ref: ref,
+      item: item,
+      action: action,
+    );
+  }
+
   // 단순 전이 (추가 입력 불필요)
+  // 판매/발송 통합 처리 (LISTED → OUTGOING)
+  if (action.needsSellAndShip) {
+    return _showSellAndShipDialog(context: context, ref: ref, item: item);
+  }
+
   if (!action.needsShipment &&
       !action.needsInspection &&
       !action.needsRepair &&
@@ -316,6 +354,66 @@ Future<bool?> _confirmAndTransition({
 }
 
 // ══════════════════════════════════════════════════
+// 정산 전이 (saleDate + settledAt 자동 설정)
+// ══════════════════════════════════════════════════
+
+Future<bool?> _confirmAndSettle({
+  required BuildContext context,
+  required WidgetRef ref,
+  required ItemData item,
+  required StatusAction action,
+}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(action.label),
+      content: Text(
+          '${_statusLabel(item.currentStatus)} → ${_statusLabel(action.targetStatus)}(으)로 변경하시겠습니까?'),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소')),
+        FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('확인')),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return false;
+
+  final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+  // sale 레코드에 판매일 + 정산일 설정
+  final sale = await ref.read(saleDaoProvider).getByItemId(item.id);
+  if (sale != null) {
+    await ref.read(saleDaoProvider).updateSale(
+          sale.id,
+          SalesCompanion(
+            itemId: Value(item.id),
+            platform: Value(sale.platform),
+            sellPrice: Value(sale.sellPrice),
+            listedPrice: Value(sale.listedPrice),
+            saleDate: Value(sale.saleDate ?? today),
+            settledAt: Value(today),
+            platformFeeRate: Value(sale.platformFeeRate),
+          ),
+        );
+  }
+
+  await ref
+      .read(itemDaoProvider)
+      .updateStatus(item.id, action.targetStatus, note: action.label);
+
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${action.label} 완료')),
+    );
+  }
+  return true;
+}
+
+// ══════════════════════════════════════════════════
 // 발송 처리 다이얼로그
 // ══════════════════════════════════════════════════
 
@@ -406,93 +504,403 @@ Future<bool?> _showInspectionDialog({
   required String targetStatus,
   required String defectType,
 }) async {
-  final reasonCtrl = TextEditingController();
-  final memoCtrl = TextEditingController();
-  final discountCtrl = TextEditingController();
-  final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-
-  final defectLabel = switch (defectType) {
-    'DEFECT_SALE' => '불량 판매',
-    'DEFECT_HELD' => '불량 보류',
-    'DEFECT_RETURN' => '반송',
-    _ => defectType,
-  };
-
-  return showDialog<bool>(
+  return showModalBottomSheet<bool>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text('검수 반려 ($defectLabel)'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: reasonCtrl,
-              decoration: const InputDecoration(
-                labelText: '반려 사유',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
+    isScrollControlled: true,
+    builder: (_) => _InspectionSheet(
+      ref: ref,
+      item: item,
+      targetStatus: targetStatus,
+      defectType: defectType,
+    ),
+  );
+}
+
+class _InspectionSheet extends StatefulWidget {
+  final WidgetRef ref;
+  final ItemData item;
+  final String targetStatus;
+  final String defectType;
+
+  const _InspectionSheet({
+    required this.ref,
+    required this.item,
+    required this.targetStatus,
+    required this.defectType,
+  });
+
+  @override
+  State<_InspectionSheet> createState() => _InspectionSheetState();
+}
+
+class _InspectionSheetState extends State<_InspectionSheet> {
+  final _reasonCtrl = TextEditingController();
+  final _memoCtrl = TextEditingController();
+  final _discountCtrl = TextEditingController();
+  final _urlCtrl = TextEditingController();
+  final _photoUrls = <String>[];
+  final _picker = ImagePicker();
+  bool _submitting = false;
+
+  String get _defectLabel => switch (widget.defectType) {
+        'DEFECT_SALE' => '불량 판매',
+        'DEFECT_HELD' => '불량 보류',
+        'DEFECT_RETURN' => '반송',
+        'PLATFORM_CANCEL' => '플랫폼 취소',
+        _ => widget.defectType,
+      };
+
+  Color get _accentColor => switch (widget.defectType) {
+        'DEFECT_SALE' => AppColors.warning,
+        'DEFECT_HELD' => AppColors.statusDefectHeld,
+        'DEFECT_RETURN' => AppColors.error,
+        'PLATFORM_CANCEL' => AppColors.accent,
+        _ => AppColors.primary,
+      };
+
+  @override
+  void dispose() {
+    _reasonCtrl.dispose();
+    _memoCtrl.dispose();
+    _discountCtrl.dispose();
+    _urlCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
+    if (file != null) {
+      setState(() => _photoUrls.add(file.path));
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
+    if (file != null) {
+      setState(() => _photoUrls.add(file.path));
+    }
+  }
+
+  void _addUrl() {
+    final url = _urlCtrl.text.trim();
+    if (url.isNotEmpty) {
+      setState(() {
+        _photoUrls.add(url);
+        _urlCtrl.clear();
+      });
+    }
+  }
+
+  void _removePhoto(int index) {
+    setState(() => _photoUrls.removeAt(index));
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    await widget.ref.read(subRecordDaoProvider).addInspectionRejection(
+          InspectionRejectionsCompanion(
+            id: Value(_uuid.v4()),
+            itemId: Value(widget.item.id),
+            returnSeq: const Value(0),
+            rejectedAt: Value(today),
+            reason: Value(
+                _reasonCtrl.text.isNotEmpty ? _reasonCtrl.text : null),
+            defectType: Value(widget.defectType),
+            discountAmount: Value(int.tryParse(_discountCtrl.text)),
+            photoUrls: Value(
+                _photoUrls.isNotEmpty ? jsonEncode(_photoUrls) : null),
+            memo: Value(_memoCtrl.text.isNotEmpty ? _memoCtrl.text : null),
+            createdAt: Value(DateTime.now().toIso8601String()),
+          ),
+        );
+
+    await widget.ref
+        .read(itemDaoProvider)
+        .updateStatus(widget.item.id, widget.targetStatus,
+            note: '검수 반려 ($_defectLabel)');
+
+    if (widget.targetStatus == 'POIZON_STORAGE') {
+      await widget.ref.read(itemDaoProvider).updateItem(
+            widget.item.id,
+            ItemsCompanion(
+              poizonStorageFrom:
+                  Value(DateFormat('yyyy-MM-dd').format(DateTime.now())),
             ),
-            if (defectType == 'DEFECT_SALE') ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: discountCtrl,
-                decoration: const InputDecoration(
-                  labelText: '할인 금액 (원)',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          );
+    }
+
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      minChildSize: 0.5,
+      expand: false,
+      builder: (ctx, sc) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // 헤더
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '하자 판정',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: _accentColor,
+                          ),
+                    ),
+                  ),
+                  Chip(
+                    label: Text(_defectLabel,
+                        style: TextStyle(fontSize: 11, color: _accentColor)),
+                    backgroundColor: _accentColor.withAlpha(20),
+                    side: BorderSide.none,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context)),
+                ],
               ),
-            ],
-            const SizedBox(height: 12),
-            TextField(
-              controller: memoCtrl,
-              decoration: const InputDecoration(
-                labelText: '메모 (선택)',
-                border: OutlineInputBorder(),
+            ),
+            const Divider(),
+
+            Expanded(
+              child: ListView(
+                controller: sc,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  // 하자 사유
+                  TextField(
+                    controller: _reasonCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '하자 사유 *',
+                      hintText: '예) 박스 찢김, 신발 오염, 사이즈 불일치 등',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 2,
+                  ),
+
+                  if (widget.defectType == 'DEFECT_SALE') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _discountCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '할인 금액 (원)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.discount_outlined),
+                      ),
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
+
+                  // 하자 사진 섹션
+                  Text('하자 사진',
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 8),
+
+                  // 사진 미리보기
+                  if (_photoUrls.isNotEmpty)
+                    SizedBox(
+                      height: 80,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _photoUrls.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: 8),
+                        itemBuilder: (_, i) {
+                          final url = _photoUrls[i];
+                          final isFile = !url.startsWith('http');
+                          return Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: isFile
+                                    ? Image.file(File(url),
+                                        width: 80,
+                                        height: 80,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            Container(
+                                          width: 80,
+                                          height: 80,
+                                          color: AppColors.surfaceVariant,
+                                          child: const Icon(
+                                              Icons.broken_image,
+                                              size: 24),
+                                        ))
+                                    : Image.network(url,
+                                        width: 80,
+                                        height: 80,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            Container(
+                                          width: 80,
+                                          height: 80,
+                                          color: AppColors.surfaceVariant,
+                                          child: const Icon(
+                                              Icons.broken_image,
+                                              size: 24),
+                                        )),
+                              ),
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: GestureDetector(
+                                  onTap: () => _removePhoto(i),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black54,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.close,
+                                        size: 14, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+
+                  const SizedBox(height: 8),
+
+                  // 사진 추가 버튼
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _pickPhoto,
+                        icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                        label: const Text('촬영', style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _pickFromGallery,
+                        icon: const Icon(Icons.photo_library_outlined, size: 16),
+                        label: const Text('갤러리', style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // URL 입력
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _urlCtrl,
+                          decoration: const InputDecoration(
+                            hintText: '이미지 URL 입력 후 추가',
+                            isDense: true,
+                            prefixIcon:
+                                Icon(Icons.link, size: 18),
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 10),
+                          ),
+                          onSubmitted: (_) => _addUrl(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: _addUrl,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                        ),
+                        child: const Text('추가', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // 메모
+                  TextField(
+                    controller: _memoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '메모 (선택)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+
+            // 하단 버튼
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _submitting ? null : _submit,
+                        style: FilledButton.styleFrom(
+                            backgroundColor: _accentColor),
+                        child: Text(_submitting
+                            ? '처리 중...'
+                            : '하자 판정 확정'),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('취소'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소')),
-        FilledButton(
-          onPressed: () async {
-            // 검수 반려 레코드 생성
-            await ref.read(subRecordDaoProvider).addInspectionRejection(
-                  InspectionRejectionsCompanion(
-                    id: Value(_uuid.v4()),
-                    itemId: Value(item.id),
-                    returnSeq: const Value(0), // 자동 생성
-                    rejectedAt: Value(today),
-                    reason: Value(reasonCtrl.text.isNotEmpty
-                        ? reasonCtrl.text
-                        : null),
-                    defectType: Value(defectType),
-                    discountAmount: Value(int.tryParse(discountCtrl.text)),
-                    memo: Value(
-                        memoCtrl.text.isNotEmpty ? memoCtrl.text : null),
-                    createdAt: Value(DateTime.now().toIso8601String()),
-                  ),
-                );
-
-            // 상태 전이
-            await ref
-                .read(itemDaoProvider)
-                .updateStatus(item.id, targetStatus, note: '검수 반려 ($defectLabel)');
-
-            if (ctx.mounted) Navigator.pop(ctx, true);
-          },
-          child: const Text('확인'),
-        ),
-      ],
-    ),
-  );
+    );
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -1009,6 +1417,175 @@ Future<bool?> _showSellPriceDialog({
 }
 
 // ══════════════════════════════════════════════════
+// 판매/발송 통합 다이얼로그 (LISTED → OUTGOING)
+// ══════════════════════════════════════════════════
+
+Future<bool?> _showSellAndShipDialog({
+  required BuildContext context,
+  required WidgetRef ref,
+  required ItemData item,
+}) async {
+  final sellPriceCtrl = TextEditingController();
+  final trackingCtrl = TextEditingController();
+  final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+  String shipDate = today;
+
+  // 기존 Sale에서 등록가/플랫폼 로드
+  final existingSale = await ref.read(saleDaoProvider).getByItemId(item.id);
+  final platform = existingSale?.platform ?? '-';
+  final listedPrice = existingSale?.listedPrice;
+
+  // 등록가를 기본값으로
+  if (listedPrice != null) {
+    sellPriceCtrl.text = '$listedPrice';
+  }
+
+  if (!context.mounted) return null;
+
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialogState) => AlertDialog(
+        title: const Text('판매/발송 처리'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 현재 리스팅 정보
+              Card(
+                color: Colors.teal.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Row(
+                    children: [
+                      Icon(Icons.sell, size: 16, color: Colors.teal.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$platform · 등록가 ${listedPrice != null ? NumberFormat('#,###').format(listedPrice) : '-'}원',
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.teal.shade800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // 실제 판매가
+              TextField(
+                controller: sellPriceCtrl,
+                decoration: const InputDecoration(
+                  labelText: '실제 판매가 (원)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.payments),
+                ),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
+              const SizedBox(height: 12),
+              // 발송일
+              InkWell(
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: ctx,
+                    initialDate: DateTime.now(),
+                    firstDate: DateTime(2024),
+                    lastDate: DateTime(2030),
+                  );
+                  if (picked != null) {
+                    setDialogState(() {
+                      shipDate = DateFormat('yyyy-MM-dd').format(picked);
+                    });
+                  }
+                },
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: '발송일',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(shipDate),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // 운송장 번호
+              TextField(
+                controller: trackingCtrl,
+                decoration: const InputDecoration(
+                  labelText: '운송장 번호 (선택)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.local_shipping),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+            onPressed: () async {
+              final sellPrice = int.tryParse(sellPriceCtrl.text);
+              if (sellPrice == null) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('판매가를 입력하세요')),
+                );
+                return;
+              }
+
+              // 1. Sale 업데이트 (실판매가 + 수수료/정산금 자동 계산)
+              if (existingSale != null) {
+                await ref.read(saleDaoProvider).updateSale(
+                      existingSale.id,
+                      SalesCompanion(
+                        itemId: Value(item.id),
+                        platform: Value(existingSale.platform),
+                        sellPrice: Value(sellPrice),
+                        listedPrice: Value(existingSale.listedPrice),
+                        saleDate: Value(shipDate),
+                        outgoingDate: Value(shipDate),
+                        trackingNumber: Value(trackingCtrl.text.isNotEmpty
+                            ? trackingCtrl.text.trim()
+                            : null),
+                        platformFeeRate: Value(existingSale.platformFeeRate),
+                      ),
+                    );
+              }
+
+              // 2. Shipment 레코드 생성
+              if (trackingCtrl.text.trim().isNotEmpty) {
+                await ref.read(subRecordDaoProvider).addShipment(
+                      ShipmentsCompanion(
+                        id: Value(_uuid.v4()),
+                        itemId: Value(item.id),
+                        seq: const Value(0),
+                        trackingNumber: Value(trackingCtrl.text.trim()),
+                        outgoingDate: Value(shipDate),
+                        platform: Value(existingSale?.platform),
+                        createdAt: Value(DateTime.now().toIso8601String()),
+                      ),
+                    );
+              }
+
+              // 3. 상태 전이 LISTED → OUTGOING
+              await ref.read(itemDaoProvider).updateStatus(
+                  item.id, 'OUTGOING',
+                  note:
+                      '판매/발송 (${NumberFormat('#,###').format(sellPrice)}원)');
+
+              if (ctx.mounted) Navigator.pop(ctx, true);
+            },
+            child: const Text('발송'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ══════════════════════════════════════════════════
 // 유틸
 // ══════════════════════════════════════════════════
 
@@ -1027,6 +1604,8 @@ String _statusLabel(String status) => switch (status) {
       'DEFECT_SETTLED' => '불량정산',
       'DEFECT_HELD' => '불량보류',
       'REPAIRING' => '수선중',
+      'POIZON_STORAGE' => '포이즌보관',
+      'CANCEL_RETURNING' => '취소반송',
       'SUPPLIER_RETURN' => '공급처반품',
       'DISPOSED' => '폐기',
       'SAMPLE' => '샘플',

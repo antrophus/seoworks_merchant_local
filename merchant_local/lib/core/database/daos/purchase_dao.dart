@@ -54,6 +54,15 @@ class PurchaseDao extends DatabaseAccessor<AppDatabase>
     return entry.copyWith(vatRefundable: Value(vatRefundable));
   }
 
+  /// 여러 아이템의 매입 데이터 배치 조회
+  Future<Map<String, PurchaseData>> getByItemIds(List<String> itemIds) async {
+    if (itemIds.isEmpty) return {};
+    final results = await (select(purchases)
+          ..where((t) => t.itemId.isIn(itemIds)))
+        .get();
+    return {for (final p in results) p.itemId: p};
+  }
+
   /// 일괄 Insert (데이터 임포트용)
   Future<void> insertAll(List<PurchasesCompanion> entries) async {
     await batch((b) {

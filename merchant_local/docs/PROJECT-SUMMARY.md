@@ -250,7 +250,14 @@ merchant_local/
         ├── dashboard/dashboard_screen.dart     ← 상태별 재고 현황 + 탭 전환
         ├── home/home_screen.dart               ← 5탭 네비게이션
         ├── inventory/
-        │   ├── inventory_screen.dart           ← 재고 목록 + 필터 + 검색바 + 바코드
+        │   ├── inventory_screen.dart           ← 재고 메인 화면 (검색/필터/바코드)
+        │   ├── inventory_providers.dart        ← Providers + 상수 + SelectionNotifier
+        │   ├── widgets/
+        │   │   ├── item_tile.dart              ← 아이템 카드 + 불량/수선 칩
+        │   │   ├── filter_chips.dart           ← 필터 칩 + 서브 탭
+        │   │   ├── grouped_list_view.dart      ← 그룹뷰 + 배치리스트 + 정산 요약
+        │   │   ├── batch_actions.dart          ← 필터별 일괄 처리 액션바
+        │   │   └── barcode_widgets.dart        ← 바코드 스캔/결과 시트
         │   ├── item_detail_screen.dart         ← 아이템 상세 (통합 뷰 + 상태변경 FAB)
         │   ├── item_register_screen.dart       ← 입고 등록 (신규상품 + 다건 사이즈)
         │   ├── purchase_form_screen.dart       ← 매입 등록/수정
@@ -276,34 +283,146 @@ merchant_local/
 
 ---
 
+## 2026-03-23 작업 내역 (셋째 날, 세션 2)
+
+### 1. AI 인식 → 입고 폼 자동완성 ✅
+- `scan_screen.dart`에서 보내는 쿼리 파라미터(brand/modelCode/modelName/sizeKr/category)를 `item_register_screen.dart`에서 수신
+- 기존 상품 DB 매칭(modelCode) → 자동 선택, 없으면 신규 모드 전환 + 필드 자동 입력
+- 브랜드명 → DB 브랜드 매칭, 사이즈차트 기반 EU 사이즈 자동완성
+
+### 2. 입고 등록 버그 수정 5건 ✅
+- **드롭다운 빈 목록 수정:** `initialValue` → `value`로 변경 (Flutter 3.41 호환)
+- **모델코드 공백→하이픈:** LLM 응답 파싱 시 `AB1234 567` → `AB1234-567` 자동 변환
+- **사이즈차트 활용:** 브랜드 선택 시 `size_charts` DB에서 KR→EU 자동 변환
+- **수량 스테퍼:** 숫자 입력 → `- [1] +` 버튼 UI
+- **매입처 필터+추가:** 온라인/오프라인 자동 필터 + 드롭다운 내 "새 매입처 추가"
+
+### 3. 재고 목록 묶음 카드 뷰 ✅
+- 상태별 그룹 카드: 발송중/검수중(발송일+송장), 리스팅(매입일), 정산완료(정산일+재무요약)
+- 카드 UI: 우상단 날짜, 좌측 건수, 가운데 썸네일(최대5개+오버플로우), 하단 요약
+- ExpansionTile로 탭하면 기존 아이템 리스트 펼침
+
+### 4. 재고 필터 단순화 ✅
+- 메인 5개: 전체 | 판매중 | 발송·검수 | 미등록 | 정산완료
+- 서브 탭: 웹앱과 동일한 탭 형식 + 건수 표시 (예: `사무실재고 243개 | 리스팅 2개`)
+- 더보기 토글: 판매완료 | 불량보류 | 수선중 | 반송중 | 기타
+- 정렬 버튼 (↑↓): 날짜 오름/내림 토글
+
+### 5. 성능/품질 개선 ✅
+- **배치 로딩:** 플랫/그룹 뷰 모두 sale+purchase+product를 한번에 조회 (N+1 → 3쿼리)
+- **검색 디바운스:** 300ms 디바운스로 타이핑 중 불필요 쿼리 차단
+- **이미지 캐시:** `cached_network_image` 패키지 — 오프라인 캐시 지원
+- **매입가 자동 포맷팅:** `123000` → `123,000` 실시간 (입고 등록/매입 등록)
+
+### 6. 웹앱 플로우차트 완전 동기화 ✅
+- **새 상태 2개:** `POIZON_STORAGE`(포이즌보관), `CANCEL_RETURNING`(취소반송)
+- **검수 5분기:** 정상/하자판매/하자보관/하자반송 + **플랫폼취소(보관)** + **플랫폼취소(반송)**
+- **POIZON_STORAGE 전이:** 보관판매 정산완료 / 반송 전환(CANCEL_RETURNING)
+- **CANCEL_RETURNING 전이:** 수취 완료 → OFFICE_STOCK 재입고
+- **Items 테이블:** `poizonStorageFrom` 컬럼 추가 (보관 시작일)
+- **DB 스키마 v2→v3 마이그레이션:** 새 컬럼 + 기존 정산 데이터 settledAt 백필
+
+### 7. 기타 수정 ✅
+- **매입처 표시:** 아이템 카드/상세에서 결제수단 대신 매입처(소스) 이름 표시
+- **정산일 자동 설정:** 검수통과 → SETTLED 전이 시 sale의 saleDate+settledAt 자동 기록
+- **대시보드 카운트 갱신:** 탭 전환 시 `itemStatusCountsProvider` 자동 invalidate
+- **대시보드 카드 재구성:** 판매중(LISTED+POIZON_STORAGE), 미등록(ORDER_PLACED+OFFICE_STOCK), 반송중(RETURNING+CANCEL_RETURNING) 통합
+- **'기타' 카드:** 전체 필터 → 주문취소/공급처반품/폐기/샘플 복수 필터로 수정
+- **adb install -r:** 앱 데이터 보존하며 업데이트 (API 키/DB 유지)
+
+### 8. 필터 구성 (최종) ✅
+
+| 메인 필터 | 상태 | 서브 탭 |
+|----------|------|--------|
+| 판매중 | LISTED + POIZON_STORAGE | 리스팅 \| 포이즌보관 |
+| 발송·검수 | OUTGOING + IN_INSPECTION | 발송중 \| 검수중 |
+| 미등록 | ORDER_PLACED + OFFICE_STOCK | 입고대기 \| 미등록재고 |
+| 정산완료 | SETTLED + DEFECT_SETTLED | — |
+| 반송중 | RETURNING + CANCEL_RETURNING | 하자반송 \| 취소반송 |
+
+---
+
 ## 알려진 이슈 / 미완료 사항
 
-### 빌드 관련
-- `build_runner` 재실행 필요할 수 있음: `dart run build_runner build --delete-conflicting-outputs`
-- Android 임포트: **파일 다중 선택** 방식으로 변경됨 (SAF 폴더 접근 권한 이슈 해결)
-- 아직 Android에서 실제 임포트 테스트 미완료 (파일 선택 방식 구현 후 테스트 필요)
+### DropdownButtonFormField deprecation
+- `value` 사용 중 (deprecated) — `initialValue`는 상태 반영이 안 되는 Flutter 버그. 동작에 문제 없음
 
-### DropdownButtonFormField 경고
-- `value` → `initialValue` 로 변경했으나, 일부 화면에서 상태 변경 시 드롭다운 값 반영이 안 될 수 있음 (Flutter 3.41.5 deprecation)
+### 상태 전이
+- 웹앱 `system-flowchart.md`의 5분기 상태 머신과 동일하게 구현 완료
+- `LISTED → SOLD → OUTGOING` 순서 (실판매가 입력 후 발송)
+- 수선 완료 → OFFICE_STOCK으로 이동 (LISTED 직행 시 리스팅 다이얼로그 미연결)
 
-### 입고 등록 화면 (`item_register_screen.dart`)
-- AI 이미지 인식 결과를 쿼리 파라미터로 전달하는 로직 구현됨, 하지만 **수신 측에서 파라미터 파싱하여 폼에 자동완성하는 코드는 아직 미구현**
+### DB 스키마
+- v3 마이그레이션: `poizon_storage_from` 컬럼 추가 + 기존 정산 데이터 `settledAt` 백필
+- 에뮬레이터 데이터는 v3로 마이그레이션됨, Seeker도 앱 재시작 시 자동 마이그레이션
 
-### 상태 전이 참고사항
-- 웹앱 `system-flowchart.md`의 상태 머신과 동일하게 구현함
-- `LISTED → OUTGOING` 이 아닌 `LISTED → SOLD → OUTGOING` 순서 (실판매가 입력 후 발송)
-- 수선 완료 → LISTED로 갈 때 리스팅 다이얼로그가 연결되지 않음 (현재 OFFICE_STOCK으로 이동)
+---
+
+## 2026-03-24 작업 내역 (넷째 날)
+
+### 1. inventory_screen.dart 파일 분리 리팩토링 ✅
+- **2,498줄 단일 파일 → 7개 파일로 분리** (유지보수성 + 토큰 효율 개선)
+  - `inventory_providers.dart` (~120줄) — Providers, 상수, 헬퍼, SelectionNotifier
+  - `widgets/item_tile.dart` (~270줄) — ItemTile + 불량/수선 칩
+  - `widgets/filter_chips.dart` (~95줄) — 필터 칩, 서브 탭
+  - `widgets/grouped_list_view.dart` (~340줄) — 그룹뷰, 배치리스트, 정산 요약
+  - `widgets/batch_actions.dart` (~530줄) — 일괄 처리 액션바 + 발송 시트
+  - `widgets/barcode_widgets.dart` (~230줄) — 바코드 스캔/결과 시트
+  - `inventory_screen.dart` (~290줄) — 메인 화면만
+- `BatchDataLoader` 믹스인으로 데이터 로딩 코드 중복 제거
+- 외부 파일 import 경로 수정 (dashboard_screen, home_screen)
+
+### 2. 판매중 뷰 B안 전환 ✅
+- **그리드 카드뷰 제거** — `_ListedGridView`, `_ListedGridCard` 삭제
+- **전체 폭 GroupedListView로 전환** — 발송·검수 뷰와 동일한 UI 패턴
+- 판매중은 **상품별 그룹핑** + `ItemTile`로 매입가/판매가/플랫폼 등 핵심 정보 표시
+- 이미지 썸네일 Row 오버플로우 → 가로 스크롤 `ListView`로 수정
+
+### 3. 판매중 카드 전용 레이아웃 ✅
+- 이미지 1장 + **사이즈별 수량 Wrap 칩** (`240 ×2`, `250 ×3` 형태)
+- 리스팅가합 → **매입가합**으로 변경
+- 전체 수량 뱃지 표시 (`6개`)
+- `ItemGroup.isListed` 플래그로 판매중 전용 타이틀 분기
+
+### 4. 판매중 정렬 로직 ✅
+- 기본(↓): 갯수 많은 순 → 동일 시 구매일 오래된 순
+- 토글(↑): 갯수 적은 순 → 동일 시 구매일 최근 순
+- `sortDate`를 productId 대신 그룹 내 가장 오래된 구매일로 설정
+
+### 5. 선택 상태 Riverpod Provider 전환 ✅
+- `setState` 로컬 state → `SelectionNotifier` (StateNotifierProvider) 전환
+- `ref.watch(selectionProvider.select((ids) => ids.contains(item.id)))` — 아이템별 O(1) rebuild
+- 선택 시 `GroupedListView` rebuild 없음, ExpansionTile 접힘 없음
+- 12개 선택 관련 props 제거 (selectMode, selectedIds, onToggle, onLongPress × 3 위젯)
+- 상단 헤더/하단 바 독립 `Consumer`로 분리
+
+### 6. 필터 내 검색 지원 ✅
+- `ItemDao.search()`에 `statuses` 옵션 파라미터 추가
+- 필터 활성 상태에서 검색 시 해당 상태의 아이템만 검색
+- 바코드 검색도 필터 인식 — 필터 상태 불일치 시 스낵바 안내
+
+### 7. 필터별 하단 액션바 분기 ✅
+- 복수 상태 필터에서도 포함된 상태 기준으로 버튼 표시
+- **판매중:** 발송 + 리스팅취소 (+ 포이즌: 정산완료/반송전환)
+- **발송·검수:** 검수도착 (+ 검수중: 검수통과/반려)
+- **미등록:** 입고 + 주문취소 (+ 미등록재고: 리스팅등록/공급처반품/폐기)
+- **검수 반려 바텀시트:** 검수통과 제외한 5개 반려 옵션 표시
+- `_batchSimpleTransition()` 공통 메서드 + `_confirmDialog()` 추출로 코드 간소화
+
+### 8. status_actions 보강 ✅
+- `OFFICE_STOCK`에 공급처반품(SUPPLIER_RETURN) 액션 추가
+- 샘플 전환 → '샘플/폐기'로 라벨 변경
 
 ---
 
 ## 다음 세션 작업 후보
 
-1. **Android 임포트 테스트** — 파일 선택 방식이 실제로 동작하는지 확인
-2. **입고 등록 쿼리파라미터 수신** — AI 인식 결과 → 입고 폼 자동완성
-3. **수선 완료 → 리스팅 플로우** — REPAIRING → LISTED 시 리스팅 다이얼로그 연결
-4. **Phase 2: POIZON API 연동** — 상품 검색, 리스팅, 주문, 정산 동기화
-5. **대시보드 강화** — 긴급 알림 (발송 기한 초과, 불량 보류), 최근 활동 로그
-6. **브랜드/매입처 마스터 관리 UI** (설정 화면)
+1. **수선 완료 → 리스팅 플로우** — REPAIRING → LISTED 시 리스팅 다이얼로그 연결
+2. **포이즌보관 90일 만료 알림** — 대시보드에 보관 만료 임박 아이템 경고
+3. **대시보드 강화** — 긴급 알림 (발송 기한 초과, 불량 보류), 최근 활동 로그
+4. **브랜드/매입처 마스터 관리 UI** (설정 화면)
+5. **일괄 처리 고도화** — 리스팅등록/반려 시 다이얼로그 연동 (현재 단순 전이만)
+6. **Phase 2: POIZON API 연동** — 상품 검색, 리스팅, 주문, 정산 동기화
 7. **Phase 3: Google Drive 동기화**
 
 ---
@@ -317,10 +436,16 @@ merchant_local/
 - **백업 JSON 경로:** `D:\dev\2026\my_project\merchant_manage\backups\2026-03-21_17-04-07`
 - **DB 파일 위치:** `{문서폴더}/merchant_local/app_data.sqlite`
 - **실기기:** Galaxy (USB 디버깅 연결, `flutter devices`에서 "Seeker"로 표시)
+- **에뮬레이터:** `Medium_Phone_API_36.1` (Android Studio AVD)
+- **adb 경로 주의:** Git bash에서 `/sdcard` 경로 변환 이슈 → `MSYS_NO_PATHCONV=1` 필수
+- **앱 업데이트:** `adb install -r` 사용 (데이터 보존), `flutter install`은 데이터 초기화됨
 - **PowerShell 주의:** `&&` 안 됨 → `;` 또는 별도 명령어 사용
+- **DB 스키마 버전:** v3
 
 ---
 
 *정리: 2026-03-21*
 *갱신: 2026-03-22 — 개발 환경 구축 + DB 재구성 + 데이터 임포트 + UI 구현*
-*갱신: 2026-03-23 — Phase 1 기능 대부분 완료 (상태전이/입고/매입판매/스캔/AI인식/Android빌드)*
+*갱신: 2026-03-23 (세션1) — Phase 1 기능 대부분 완료 (상태전이/입고/매입판매/스캔/AI인식/Android빌드)*
+*갱신: 2026-03-23 (세션2) — AI자동완성/필터단순화/묶음카드/배치로딩/웹앱5분기동기화/포이즌보관*
+*갱신: 2026-03-24 — 파일분리리팩토링/판매중뷰B안/선택Provider전환/필터내검색/필터별액션바*

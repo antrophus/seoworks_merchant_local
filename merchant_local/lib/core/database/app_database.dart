@@ -91,17 +91,15 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
-          // platform_fee_rules 시드 데이터
           await _seedPlatformFeeRules();
         },
         onUpgrade: (m, from, to) async {
-          // v1 → v2: 전체 스키마 재생성 (개발 중이므로 데이터 리셋)
           if (from < 2) {
             final tables = allTables.toList().reversed;
             for (final table in tables) {
@@ -109,6 +107,30 @@ class AppDatabase extends _$AppDatabase {
             }
             await m.createAll();
             await _seedPlatformFeeRules();
+          }
+          // v2 → v3: items에 poizon_storage_from + 기존 정산 데이터 백필
+          if (from >= 2 && from < 3) {
+            await customStatement(
+                'ALTER TABLE items ADD COLUMN poizon_storage_from TEXT');
+            // 기존 SETTLED 아이템의 settledAt/saleDate 백필 (상태 변경 이력에서)
+            await customStatement('''
+              UPDATE sales SET
+                settled_at = COALESCE(settled_at, (
+                  SELECT changed_at FROM status_logs
+                  WHERE status_logs.item_id = sales.item_id
+                  AND status_logs.new_status IN ('SETTLED','DEFECT_SETTLED')
+                  ORDER BY changed_at DESC LIMIT 1
+                )),
+                sale_date = COALESCE(sale_date, (
+                  SELECT changed_at FROM status_logs
+                  WHERE status_logs.item_id = sales.item_id
+                  AND status_logs.new_status IN ('SETTLED','DEFECT_SETTLED')
+                  ORDER BY changed_at DESC LIMIT 1
+                ))
+              WHERE item_id IN (
+                SELECT id FROM items WHERE current_status IN ('SETTLED','DEFECT_SETTLED')
+              ) AND settled_at IS NULL
+            ''');
           }
         },
       );

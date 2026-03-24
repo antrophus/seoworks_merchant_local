@@ -155,6 +155,15 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
   Future<List<SaleAdjustmentData>> getAdjustments(String saleId) =>
       (select(saleAdjustments)..where((t) => t.saleId.equals(saleId))).get();
 
+  /// 여러 아이템의 판매 데이터 배치 조회
+  Future<Map<String, SaleData>> getByItemIds(List<String> itemIds) async {
+    if (itemIds.isEmpty) return {};
+    final results = await (select(sales)
+          ..where((t) => t.itemId.isIn(itemIds)))
+        .get();
+    return {for (final s in results) s.itemId: s};
+  }
+
   /// 일괄 Insert (데이터 임포트용)
   Future<void> insertAll(List<SalesCompanion> entries) async {
     await batch((b) {

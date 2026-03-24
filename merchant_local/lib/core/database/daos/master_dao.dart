@@ -79,7 +79,26 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
     });
   }
 
+  /// 모든 소스를 Map으로 (id → Source)
+  Future<Map<String, Source>> getAllSourcesMap() async {
+    final list = await getAllSources();
+    return {for (final s in list) s.id: s};
+  }
+
+  // ── Sources (filtered) ──
+  Future<List<Source>> getSourcesByType(String type) =>
+      (select(sources)
+            ..where((t) => t.type.equals(type))
+            ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+          .get();
+
   // ── SizeCharts ──
+  Future<List<SizeChartData>> getSizeChartsByBrand(String brandName) =>
+      (select(sizeCharts)
+            ..where((t) => t.brand.equals(brandName.toUpperCase()))
+            ..orderBy([(t) => OrderingTerm.asc(t.kr)]))
+          .get();
+
   Future<void> insertAllSizeCharts(List<SizeChartsCompanion> entries) async {
     await batch((b) {
       b.insertAll(sizeCharts, entries, mode: InsertMode.insertOrIgnore);

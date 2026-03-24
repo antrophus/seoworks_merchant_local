@@ -15,7 +15,7 @@ final _sourcesProvider = FutureProvider<List<Source>>((ref) {
 
 class PurchaseFormScreen extends ConsumerStatefulWidget {
   final String itemId;
-  final String? purchaseId; // null이면 등록, 있으면 수정
+  final String? purchaseId;
 
   const PurchaseFormScreen({
     super.key,
@@ -64,8 +64,10 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
         await ref.read(purchaseDaoProvider).getByItemId(widget.itemId);
     if (purchase == null) return;
 
-    _priceController.text =
-        purchase.purchasePrice != null ? '${purchase.purchasePrice}' : '';
+    if (purchase.purchasePrice != null) {
+      _priceController.text =
+          NumberFormat('#,###').format(purchase.purchasePrice);
+    }
     _dateController.text = purchase.purchaseDate ?? '';
     _memoController.text = purchase.memo ?? '';
     _paymentMethod = purchase.paymentMethod;
@@ -94,7 +96,8 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
     setState(() => _saving = true);
 
     try {
-      final price = int.tryParse(_priceController.text);
+      final price =
+          int.tryParse(_priceController.text.replaceAll(',', ''));
       final entry = PurchasesCompanion(
         id: Value(widget.purchaseId ?? const Uuid().v4()),
         itemId: Value(widget.itemId),
@@ -130,7 +133,6 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 수정 모드일 때 기존 데이터 로드
     if (widget.isEditing && !_loaded) {
       _loadExisting();
     }
@@ -155,15 +157,17 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              validator: (v) =>
-                  (v == null || v.isEmpty) ? '매입가를 입력하세요' : null,
+              inputFormatters: [_PriceInputFormatter()],
+              validator: (v) {
+                final raw = v?.replaceAll(',', '');
+                return (raw == null || raw.isEmpty) ? '매입가를 입력하세요' : null;
+              },
             ),
             const SizedBox(height: 16),
 
             // 결제수단
             DropdownButtonFormField<String>(
-              initialValue: _paymentMethod,
+              value: _paymentMethod,
               decoration: const InputDecoration(
                 labelText: '결제수단',
                 prefixIcon: Icon(Icons.credit_card),
@@ -184,15 +188,18 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
             // 매입처
             sourcesAsync.when(
               data: (sources) {
+                final validSourceId =
+                    sources.any((s) => s.id == _sourceId) ? _sourceId : null;
                 return DropdownButtonFormField<String?>(
-                  initialValue: _sourceId,
+                  value: validSourceId,
                   decoration: const InputDecoration(
                     labelText: '매입처',
                     prefixIcon: Icon(Icons.store),
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem(value: null, child: Text('선택 안함')),
+                    const DropdownMenuItem(
+                        value: null, child: Text('선택 안함')),
                     ...sources.map((s) => DropdownMenuItem(
                           value: s.id,
                           child: Text(s.name),
@@ -278,6 +285,25 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── 매입가 자동 포맷팅 ──
+
+class _PriceInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) {
+      return newValue.copyWith(
+          text: '', selection: const TextSelection.collapsed(offset: 0));
+    }
+    final formatted = NumberFormat('#,###').format(int.parse(digits));
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

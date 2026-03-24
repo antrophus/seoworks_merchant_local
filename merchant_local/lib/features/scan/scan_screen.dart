@@ -11,6 +11,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
 import '../../core/services/llm_router.dart';
+import '../inventory/status_actions.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
   const ScanScreen({super.key});
@@ -77,6 +78,11 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
   bool _searching = false;
   bool _notFound = false;
 
+  // 연속스캔 모드
+  bool _continuousMode = false;
+  final List<ItemData> _bucket = [];
+  final Set<String> _bucketBarcodes = {};
+
   bool get _isMobile =>
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
@@ -100,7 +106,32 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
   }
 
   Future<void> _onBarcodeDetected(String barcode) async {
-    if (barcode == _lastBarcode || _searching) return;
+    if (_searching) return;
+
+    if (_continuousMode) {
+      // 연속스캔: 중복 방지 후 장바구니에 추가
+      if (_bucketBarcodes.contains(barcode)) return;
+      setState(() => _searching = true);
+      final item = await ref.read(itemDaoProvider).getByBarcode(barcode);
+      if (mounted) {
+        setState(() {
+          _searching = false;
+          if (item != null) {
+            _bucket.add(item);
+            _bucketBarcodes.add(barcode);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('바코드 $barcode — 미등록 상품'),
+                  duration: const Duration(seconds: 1)),
+            );
+          }
+        });
+      }
+      return;
+    }
+
+    // 단일 스캔 모드
+    if (barcode == _lastBarcode) return;
     _lastBarcode = barcode;
     setState(() {
       _searching = true;
@@ -124,6 +155,39 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
       _foundItem = null;
       _notFound = false;
     });
+  }
+
+  void _clearBucket() {
+    setState(() {
+      _bucket.clear();
+      _bucketBarcodes.clear();
+    });
+  }
+
+  Future<void> _processBucket() async {
+    if (_bucket.isEmpty) return;
+
+    // 같은 상태인지 확인
+    final statuses = _bucket.map((i) => i.currentStatus).toSet();
+    if (statuses.length != 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('같은 상태의 아이템만 일괄 처리할 수 있습니다')),
+      );
+      return;
+    }
+
+    final result = await showStatusActionSheet(
+      context: context,
+      ref: ref,
+      item: _bucket.first,
+    );
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${_bucket.length}건 처리 완료')),
+      );
+      _clearBucket();
+    }
   }
 
   @override
@@ -161,9 +225,47 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
 
     return Column(
       children: [
+        // 모드 토글 바
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            children: [
+              ChoiceChip(
+                label: const Text('단일'),
+                selected: !_continuousMode,
+                onSelected: (_) => setState(() => _continuousMode = false),
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('연속 스캔'),
+                selected: _continuousMode,
+                onSelected: (_) => setState(() => _continuousMode = true),
+                visualDensity: VisualDensity.compact,
+                avatar: _continuousMode
+                    ? null
+                    : const Icon(Icons.playlist_add, size: 16),
+              ),
+              const Spacer(),
+              if (_continuousMode && _bucket.isNotEmpty) ...[
+                Text('${_bucket.length}건',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: _clearBucket,
+                  tooltip: '비우기',
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ],
+          ),
+        ),
+
         // 카메라 뷰
         Expanded(
-          flex: 3,
+          flex: _continuousMode && _bucket.isNotEmpty ? 2 : 3,
           child: Stack(
             children: [
               MobileScanner(
@@ -176,7 +278,6 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
                   }
                 },
               ),
-              // 스캔 프레임 오버레이
               Center(
                 child: Container(
                   width: 250,
@@ -187,7 +288,6 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
                   ),
                 ),
               ),
-              // 카메라 컨트롤
               Positioned(
                 bottom: 16,
                 left: 0,
@@ -211,10 +311,10 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
           ),
         ),
 
-        // 결과 영역
+        // 연속스캔 장바구니 or 단일 결과
         Expanded(
           flex: 2,
-          child: _buildResult(),
+          child: _continuousMode ? _buildBucket() : _buildResult(),
         ),
       ],
     );
@@ -259,6 +359,74 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
     }
 
     return const SizedBox.shrink();
+  }
+
+  Widget _buildBucket() {
+    if (_bucket.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.playlist_add, size: 48, color: Colors.grey.shade400),
+            const SizedBox(height: 8),
+            const Text('바코드를 연속으로 스캔하세요',
+                style: TextStyle(color: Colors.grey)),
+            const Text('스캔할 때마다 목록에 추가됩니다',
+                style: TextStyle(color: Colors.grey, fontSize: 12)),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            itemCount: _bucket.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, i) {
+              final item = _bucket[i];
+              return ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Colors.grey.shade200,
+                  child: Text('${i + 1}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+                title: Text(item.sku,
+                    style: const TextStyle(fontSize: 13)),
+                subtitle: Text(
+                    'KR ${item.sizeKr} · ${item.currentStatus}',
+                    style: const TextStyle(fontSize: 11)),
+                trailing: IconButton(
+                  icon: const Icon(Icons.remove_circle_outline, size: 18),
+                  onPressed: () {
+                    setState(() {
+                      _bucketBarcodes.remove(item.barcode);
+                      _bucket.removeAt(i);
+                    });
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        // 일괄 처리 버튼
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _processBucket,
+              icon: const Icon(Icons.swap_vert_rounded, size: 18),
+              label: Text('${_bucket.length}건 일괄 상태 변경'),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

@@ -40,6 +40,7 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
   final _sellPriceController = TextEditingController();
   final _feeRateController = TextEditingController();
   final _dateController = TextEditingController();
+  final _settledAtController = TextEditingController();
   final _memoController = TextEditingController();
 
   String _platform = 'POIZON';
@@ -60,6 +61,7 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
     _sellPriceController.dispose();
     _feeRateController.dispose();
     _dateController.dispose();
+    _settledAtController.dispose();
     _memoController.dispose();
     super.dispose();
   }
@@ -80,6 +82,7 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
         ? (sale.platformFeeRate! * 100).toStringAsFixed(1)
         : '';
     _dateController.text = sale.saleDate ?? '';
+    _settledAtController.text = sale.settledAt ?? '';
     _memoController.text = sale.memo ?? '';
     if (mounted) setState(() {});
   }
@@ -97,6 +100,24 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
     );
     if (picked != null) {
       _dateController.text = DateFormat('yyyy-MM-dd').format(picked);
+    }
+  }
+
+  Future<void> _pickSettledAt() async {
+    final now = DateTime.now();
+    final initial = _settledAtController.text.isNotEmpty
+        ? DateTime.tryParse(_settledAtController.text) ?? now
+        : now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() {
+        _settledAtController.text = DateFormat('yyyy-MM-dd').format(picked);
+      });
     }
   }
 
@@ -123,6 +144,8 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
         platformFeeRate: Value(feeRate),
         saleDate: Value(
             _dateController.text.isNotEmpty ? _dateController.text : null),
+        settledAt: Value(
+            _settledAtController.text.isNotEmpty ? _settledAtController.text : null),
         memo: Value(
             _memoController.text.isNotEmpty ? _memoController.text : null),
         dataSource: const Value('manual'),
@@ -287,6 +310,34 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
               ),
               readOnly: true,
               onTap: _pickDate,
+            ),
+            const SizedBox(height: 16),
+
+            // 정산일
+            TextFormField(
+              controller: _settledAtController,
+              decoration: InputDecoration(
+                labelText: '정산일',
+                prefixIcon: const Icon(Icons.payments),
+                border: const OutlineInputBorder(),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_settledAtController.text.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () =>
+                            setState(() => _settledAtController.clear()),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.edit_calendar),
+                      onPressed: _pickSettledAt,
+                    ),
+                  ],
+                ),
+              ),
+              readOnly: true,
+              onTap: _pickSettledAt,
             ),
             const SizedBox(height: 16),
 
