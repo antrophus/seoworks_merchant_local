@@ -36,6 +36,13 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
             ..orderBy([(t) => OrderingTerm.desc(t.changedAt)]))
           .get();
 
+  /// 최근 상태 변경 로그 (대시보드용)
+  Future<List<StatusLogData>> getRecentStatusLogs({int limit = 8}) =>
+      (select(statusLogs)
+            ..orderBy([(t) => OrderingTerm.desc(t.changedAt)])
+            ..limit(limit))
+          .get();
+
   Future<void> insertAllStatusLogs(List<StatusLogsCompanion> entries) async {
     await batch((b) {
       b.insertAll(statusLogs, entries, mode: InsertMode.insertOrIgnore);

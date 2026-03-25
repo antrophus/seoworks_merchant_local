@@ -201,15 +201,10 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: Icon(
-                      sortAsc ? Icons.arrow_upward : Icons.arrow_downward,
-                      size: 20),
-                  tooltip: sortAsc ? '오래된 순' : '최신 순',
-                  onPressed: () => ref
-                      .read(inventorySortAscProvider.notifier)
-                      .state = !sortAsc,
-                ),
+                // 개인/사업용 토글 (전체→사업용→개인용→전체)
+                _PersonalFilterToggle(),
+                // 정렬 토글 (최신순↔오래된순, 판매중은 재고순)
+                _SortToggleButton(),
               ],
             ),
           ),
@@ -229,7 +224,13 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
         // ── 아이템 목록 ──
         Expanded(
           child: itemsAsync.when(
-            data: (items) {
+            data: (rawItems) {
+              final personalFilter = ref.watch(inventoryPersonalFilterProvider);
+              final items = personalFilter == null
+                  ? rawItems
+                  : rawItems
+                      .where((i) => i.isPersonal == personalFilter)
+                      .toList();
               if (items.isEmpty) {
                 return Center(
                   child: Column(
@@ -379,5 +380,48 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
         if (go == true && mounted) context.push('/register');
       }
     }
+  }
+}
+
+// ── 개인/사업용 토글 (전체→사업용→개인용→전체) ──
+class _PersonalFilterToggle extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pf = ref.watch(inventoryPersonalFilterProvider);
+    final label = pf == null ? '전체' : pf ? '소장품' : '사업용';
+    final icon = pf == null
+        ? Icons.people_outline
+        : pf
+            ? Icons.person
+            : Icons.store;
+
+    return IconButton(
+      icon: Icon(icon, size: 20, color: pf != null ? AppColors.primary : null),
+      tooltip: label,
+      onPressed: () {
+        // null → false → true → null
+        final next = pf == null ? false : pf ? null : true;
+        ref.read(inventoryPersonalFilterProvider.notifier).state = next;
+      },
+    );
+  }
+}
+
+// ── 정렬 토글 (최신순↔오래된순) ──
+class _SortToggleButton extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sortAsc = ref.watch(inventorySortAscProvider);
+
+    return IconButton(
+      icon: Icon(
+        sortAsc ? Icons.arrow_upward : Icons.arrow_downward,
+        size: 20,
+      ),
+      tooltip: sortAsc ? '오래된 순' : '최신 순',
+      onPressed: () {
+        ref.read(inventorySortAscProvider.notifier).state = !sortAsc;
+      },
+    );
   }
 }

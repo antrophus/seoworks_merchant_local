@@ -160,4 +160,73 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
         row.read<String>('current_status'): row.read<int>('cnt'),
     };
   }
+
+  /// 대시보드 — 브랜드 Top N (아이템 수 기준)
+  Future<List<Map<String, dynamic>>> getTopBrands(int limit) async {
+    final results = await customSelect(
+      '''
+      SELECT b.name AS brand_name, COUNT(*) AS cnt
+      FROM items i
+      INNER JOIN products p ON p.id = i.product_id
+      INNER JOIN brands b ON b.id = p.brand_id
+      WHERE i.current_status NOT IN ('ORDER_CANCELLED', 'DISPOSED')
+      GROUP BY b.id, b.name
+      ORDER BY cnt DESC
+      LIMIT ?
+      ''',
+      variables: [Variable.withInt(limit)],
+      readsFrom: {items},
+    ).get();
+    return results
+        .map((r) => {
+              'brandName': r.read<String>('brand_name'),
+              'count': r.read<int>('cnt'),
+            })
+        .toList();
+  }
+
+  /// 대시보드 — 검수 기한 경과 아이템 수 (IN_INSPECTION 상태에서 N일 이상)
+  /// updated_at = 상태가 IN_INSPECTION으로 변경된 시점
+  Future<int> getOverdueInspectionCount(int days) async {
+    final cutoff =
+        DateTime.now().subtract(Duration(days: days)).toIso8601String();
+    final result = await customSelect(
+      '''
+      SELECT COUNT(*) AS cnt FROM items
+      WHERE current_status = 'IN_INSPECTION'
+        AND updated_at < ?
+      ''',
+      variables: [Variable.withString(cutoff)],
+      readsFrom: {items},
+    ).getSingle();
+    return result.read<int>('cnt');
+  }
+
+  /// 대시보드 — 자산 개요 (총 구매원가, 등록가 합계, 예상 이익)
+  Future<Map<String, int>> getAssetSummary() async {
+    final result = await customSelect(
+      '''
+      SELECT
+        COALESCE(SUM(p.purchase_price), 0) AS total_cost,
+        COALESCE(SUM(s.listed_price), 0) AS total_listed,
+        COALESCE(SUM(s.settlement_amount), 0) AS total_settlement,
+        COALESCE(SUM(
+          CASE WHEN s.settlement_amount IS NOT NULL
+               THEN s.settlement_amount - COALESCE(p.purchase_price, 0)
+               ELSE 0 END
+        ), 0) AS total_profit
+      FROM items i
+      LEFT JOIN purchases p ON p.item_id = i.id
+      LEFT JOIN sales s ON s.item_id = i.id
+      WHERE i.current_status NOT IN ('ORDER_CANCELLED', 'DISPOSED')
+      ''',
+      readsFrom: {items},
+    ).getSingle();
+    return {
+      'totalCost': result.read<int>('total_cost'),
+      'totalListed': result.read<int>('total_listed'),
+      'totalSettlement': result.read<int>('total_settlement'),
+      'totalProfit': result.read<int>('total_profit'),
+    };
+  }
 }

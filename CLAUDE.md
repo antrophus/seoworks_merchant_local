@@ -61,23 +61,18 @@ UI 구조, 시각 디자인, 컴포넌트, 레이아웃, 색상, 타이포그래
 
 ### 완료된 작업 (2026-03-23)
 - [x] 프로젝트 기획 및 방향 확정
-- [x] `CLAUDE.md` 작성
-- [x] `docs/PRD.md` 작성 — 기능 정의, MoSCoW 우선순위, 성공 지표 포함
-- [x] `docs/architecture.md` 작성 — 스택 선택, API 설계, 디렉토리 구조, 3단계 로드맵
-- [x] `docs/작업일지.md` 작성
+- [x] `CLAUDE.md`, `docs/PRD.md`, `docs/architecture.md` 작성
 
-### 다음 세션에서 해야 할 작업 (Phase 1 시작)
-1. **백엔드 구조 결정** — Express 별도 서버 vs Next.js API Routes (사용자 결정 필요)
-2. **프로젝트 초기 세팅** — Vite + React + TypeScript + Tailwind + shadcn/ui 설치
-3. **InputPanel UI 구현** — 상품 정보 입력 폼 + 이미지 업로드
-4. **PreviewPanel UI 구현** — 생성 결과 미리보기 영역
+### 완료된 작업 (2026-03-24~25) — Phase 2-A + 2-B
+- [x] Phase 2-A: 대시보드 강화, 판매 내역 페이지, SizePicker 고도화, 검수 반려, 배치 구매
+- [x] Phase 2-B: 분석 대시보드(fl_chart), 하자/물류/구매 전용 페이지, 인벤토리 정렬 확장, 데이터 내보내기
+- **전체 이식률: 87% (121개 중 102개 완료)**
+- 상세: `merchant_local/docs/web-to-local-migration-plan.md` 섹션 5~6 참조
 
-### 미결 결정 사항
-| 항목 | 옵션 A | 옵션 B |
-|------|--------|--------|
-| 백엔드 구조 | Express 별도 서버 | Next.js API Routes (풀스택) |
-| 출력 형식 | HTML + Tailwind 인라인 | React 컴포넌트 코드 |
-| 이미지 저장소 | 로컬 파일 | S3 / Cloudflare R2 |
+### 다음 세션 작업
+- **Phase 2-C**: 캘린더 뷰, Google Drive 동기화, 기타 UI 개선
+- **잔여 이슈**: AI 스캔→사이즈 자동완성 버그, 하자/물류/구매 네비게이션 연결, 이미지 저장 로직 확인
+- 상세: `merchant_local/docs/web-to-local-migration-plan.md` 섹션 6 참조
 
 ### 설치된 도구 (전역)
 

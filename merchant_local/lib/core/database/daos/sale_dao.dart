@@ -9,6 +9,19 @@ import '../tables/platform_fee_rule_table.dart';
 
 part 'sale_dao.g.dart';
 
+/// 판매 + 아이템 + 상품 조인 결과
+class SaleWithItem {
+  final SaleData sale;
+  final ItemData item;
+  final Product product;
+
+  const SaleWithItem({
+    required this.sale,
+    required this.item,
+    required this.product,
+  });
+}
+
 @DriftAccessor(
     tables: [Sales, SaleAdjustments, Items, Products, PlatformFeeRules])
 class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
@@ -154,6 +167,237 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
   /// 조정금 목록
   Future<List<SaleAdjustmentData>> getAdjustments(String saleId) =>
       (select(saleAdjustments)..where((t) => t.saleId.equals(saleId))).get();
+
+  /// 판매 내역 목록 (아이템+상품 JOIN, 필터 지원)
+  Future<List<SaleWithItem>> getSalesWithItems({
+    String? platform,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    final query = select(sales).join([
+      innerJoin(items, items.id.equalsExp(sales.itemId)),
+      innerJoin(products, products.id.equalsExp(items.productId)),
+    ]);
+
+    // 정산 관련 상태만
+    query.where(items.currentStatus.isIn([
+      'SOLD',
+      'SETTLED',
+      'DEFECT_SOLD',
+      'DEFECT_SETTLED',
+      'DEFECT_FOR_SALE',
+      'DEFECT_HELD',
+      'OUTGOING',
+      'IN_INSPECTION',
+      'LISTED',
+      'POIZON_STORAGE',
+    ]));
+
+    if (platform != null) {
+      query.where(sales.platform.equals(platform));
+    }
+    if (dateFrom != null) {
+      query.where(sales.saleDate.isBiggerOrEqualValue(dateFrom) |
+          sales.createdAt.isBiggerOrEqualValue(dateFrom));
+    }
+    if (dateTo != null) {
+      query.where(sales.saleDate.isSmallerOrEqualValue(dateTo) |
+          sales.createdAt.isSmallerOrEqualValue(dateTo));
+    }
+    query.orderBy([OrderingTerm.desc(sales.createdAt)]);
+
+    final rows = await query.get();
+    return rows.map((row) => SaleWithItem(
+          sale: row.readTable(sales),
+          item: row.readTable(items),
+          product: row.readTable(products),
+        )).toList();
+  }
+
+  /// 판매 통계 요약 (총 판매/정산/이익/마진율)
+  Future<Map<String, num>> getSalesSummary({
+    String? platform,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    var where = "WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')";
+    final vars = <Variable>[];
+    if (platform != null) {
+      where += ' AND s.platform = ?';
+      vars.add(Variable.withString(platform));
+    }
+    if (dateFrom != null) {
+      where += ' AND (s.sale_date >= ? OR s.created_at >= ?)';
+      vars.add(Variable.withString(dateFrom));
+      vars.add(Variable.withString(dateFrom));
+    }
+    if (dateTo != null) {
+      where += ' AND (s.sale_date <= ? OR s.created_at <= ?)';
+      vars.add(Variable.withString(dateTo));
+      vars.add(Variable.withString(dateTo));
+    }
+
+    final result = await customSelect(
+      '''
+      SELECT
+        COUNT(*) AS cnt,
+        COALESCE(SUM(s.sell_price), 0) AS total_sell,
+        COALESCE(SUM(s.settlement_amount), 0) AS total_settlement,
+        COALESCE(SUM(s.settlement_amount - COALESCE(p.purchase_price, 0)), 0) AS total_profit,
+        COALESCE(SUM(p.purchase_price), 0) AS total_cost
+      FROM sales s
+      JOIN items i ON i.id = s.item_id
+      LEFT JOIN purchases p ON p.item_id = s.item_id
+      $where
+      ''',
+      variables: vars,
+      readsFrom: {sales, items},
+    ).getSingle();
+
+    final totalSell = result.read<int>('total_sell');
+    final totalCost = result.read<int>('total_cost');
+    return {
+      'count': result.read<int>('cnt'),
+      'totalSell': totalSell,
+      'totalSettlement': result.read<int>('total_settlement'),
+      'totalProfit': result.read<int>('total_profit'),
+      'marginRate': totalCost > 0
+          ? (result.read<int>('total_profit') / totalCost * 100)
+          : 0.0,
+    };
+  }
+
+  /// 월별 트렌드 (판매액/정산액/이익)
+  Future<List<Map<String, dynamic>>> getMonthlyTrend({String? year}) async {
+    final whereYear = year != null
+        ? "AND (SUBSTR(s.sale_date, 1, 4) = ? OR SUBSTR(s.created_at, 1, 4) = ?)"
+        : '';
+    final vars = <Variable>[
+      if (year != null) ...[
+        Variable.withString(year),
+        Variable.withString(year),
+      ],
+    ];
+
+    final results = await customSelect(
+      '''
+      SELECT
+        SUBSTR(COALESCE(s.sale_date, s.created_at), 1, 7) AS month,
+        COALESCE(SUM(s.sell_price), 0) AS sell,
+        COALESCE(SUM(s.settlement_amount), 0) AS settlement,
+        COALESCE(SUM(s.settlement_amount - COALESCE(p.purchase_price, 0)), 0) AS profit
+      FROM sales s
+      JOIN items i ON i.id = s.item_id
+      LEFT JOIN purchases p ON p.item_id = s.item_id
+      WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
+      $whereYear
+      GROUP BY month ORDER BY month
+      ''',
+      variables: vars,
+      readsFrom: {sales, items},
+    ).get();
+
+    return results.map((r) => {
+          'month': r.read<String>('month'),
+          'sell': r.read<int>('sell'),
+          'settlement': r.read<int>('settlement'),
+          'profit': r.read<int>('profit'),
+        }).toList();
+  }
+
+  /// 플랫폼별 판매 분포
+  Future<List<Map<String, dynamic>>> getPlatformDistribution() async {
+    final results = await customSelect(
+      '''
+      SELECT s.platform, COUNT(*) AS cnt,
+             COALESCE(SUM(s.sell_price), 0) AS total_sell
+      FROM sales s
+      JOIN items i ON i.id = s.item_id
+      WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
+      GROUP BY s.platform ORDER BY total_sell DESC
+      ''',
+      readsFrom: {sales, items},
+    ).get();
+
+    return results.map((r) => {
+          'platform': r.read<String>('platform'),
+          'count': r.read<int>('cnt'),
+          'totalSell': r.read<int>('total_sell'),
+        }).toList();
+  }
+
+  /// Top N 수익/손실 모델
+  Future<List<Map<String, dynamic>>> getTopModels({
+    required int limit,
+    required bool ascending,
+  }) async {
+    final order = ascending ? 'ASC' : 'DESC';
+    final results = await customSelect(
+      '''
+      SELECT pr.model_code, pr.model_name,
+             COUNT(*) AS cnt,
+             COALESCE(SUM(s.settlement_amount - COALESCE(p.purchase_price, 0)), 0) AS profit
+      FROM sales s
+      JOIN items i ON i.id = s.item_id
+      JOIN products pr ON pr.id = i.product_id
+      LEFT JOIN purchases p ON p.item_id = s.item_id
+      WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
+        AND s.settlement_amount IS NOT NULL
+      GROUP BY pr.model_code, pr.model_name
+      ORDER BY profit $order
+      LIMIT ?
+      ''',
+      variables: [Variable.withInt(limit)],
+      readsFrom: {sales, items},
+    ).get();
+
+    return results.map((r) => {
+          'modelCode': r.read<String>('model_code'),
+          'modelName': r.read<String>('model_name'),
+          'count': r.read<int>('cnt'),
+          'profit': r.read<int>('profit'),
+        }).toList();
+  }
+
+  /// 정산완료 판매 목록 — 정산일 기준 오래된순, 브랜드-모델명 포함
+  Future<List<SaleWithItem>> getSettledSales({
+    String? platform,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    final query = select(sales).join([
+      innerJoin(items, items.id.equalsExp(sales.itemId)),
+      innerJoin(products, products.id.equalsExp(items.productId)),
+    ]);
+
+    query.where(items.currentStatus.isIn([
+      'SETTLED',
+      'DEFECT_SETTLED',
+    ]));
+
+    if (platform != null) {
+      query.where(sales.platform.equals(platform));
+    }
+    if (dateFrom != null) {
+      query.where(sales.settledAt.isBiggerOrEqualValue(dateFrom) |
+          sales.saleDate.isBiggerOrEqualValue(dateFrom));
+    }
+    if (dateTo != null) {
+      query.where(sales.settledAt.isSmallerOrEqualValue(dateTo) |
+          sales.saleDate.isSmallerOrEqualValue(dateTo));
+    }
+    // 정산일 기준 오래된순
+    query.orderBy([OrderingTerm.asc(sales.settledAt)]);
+
+    final rows = await query.get();
+    return rows
+        .map((row) => SaleWithItem(
+              sale: row.readTable(sales),
+              item: row.readTable(items),
+              product: row.readTable(products),
+            ))
+        .toList();
+  }
 
   /// 여러 아이템의 판매 데이터 배치 조회
   Future<Map<String, SaleData>> getByItemIds(List<String> itemIds) async {

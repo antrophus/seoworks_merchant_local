@@ -99,6 +99,25 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
             ..orderBy([(t) => OrderingTerm.asc(t.kr)]))
           .get();
 
+  Future<List<SizeChartData>> getSizeChartsByBrandAndTarget(
+          String brandName, String target) =>
+      (select(sizeCharts)
+            ..where((t) =>
+                t.brand.equals(brandName.toUpperCase()) &
+                t.target.equals(target))
+            ..orderBy([(t) => OrderingTerm.asc(t.kr)]))
+          .get();
+
+  /// 해당 브랜드의 사이즈차트에 존재하는 target 목록 (MEN, WOMEN, KIDS)
+  Future<List<String>> getSizeChartTargets(String brandName) async {
+    final results = await customSelect(
+      'SELECT DISTINCT target FROM size_charts WHERE brand = ? ORDER BY target',
+      variables: [Variable.withString(brandName.toUpperCase())],
+      readsFrom: {sizeCharts},
+    ).get();
+    return results.map((r) => r.read<String>('target')).toList();
+  }
+
   Future<void> insertAllSizeCharts(List<SizeChartsCompanion> entries) async {
     await batch((b) {
       b.insertAll(sizeCharts, entries, mode: InsertMode.insertOrIgnore);

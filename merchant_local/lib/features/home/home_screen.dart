@@ -28,7 +28,7 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Merchant Local'),
+        title: const Text('SEOWORKS'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -44,6 +44,86 @@ class HomeScreen extends ConsumerWidget {
           ),
         ),
       ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(
+                    Icons.storefront,
+                    size: 40,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'SEOWORKS',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.analytics_outlined),
+              title: const Text('분석'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/analytics');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.warning_amber_outlined),
+              title: const Text('하자 관리'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/exceptions');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.local_shipping_outlined),
+              title: const Text('물류 추적'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/logistics');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.shopping_cart_outlined),
+              title: const Text('구매 내역'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/purchases');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.payments_outlined),
+              title: const Text('판매 내역'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/sales');
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('설정'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/settings');
+              },
+            ),
+          ],
+        ),
+      ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 200),
         child: KeyedSubtree(
@@ -51,7 +131,7 @@ class HomeScreen extends ConsumerWidget {
           child: _tabs[tabIndex],
         ),
       ),
-      floatingActionButton: tabIndex == 1
+      floatingActionButton: tabIndex == 1 // 재고 탭
           ? FloatingActionButton(
               onPressed: () => context.push('/register'),
               tooltip: '입고 등록',

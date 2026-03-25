@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
+import 'widgets/size_picker_sheet.dart';
 
 const _uuid = Uuid();
 
@@ -128,8 +129,8 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
           );
 
       if (match != null) {
-        _selectProduct(match);
-        // 사이즈 자동완성
+        await _selectProduct(match);
+        // 사이즈 자동완성 (사이즈차트 로드 완료 후)
         if (widget.prefillSizeKr != null) {
           _sizeEntries.first.sizeKrController.text = widget.prefillSizeKr!;
           _autoFillEuSize(_sizeEntries.first);
@@ -191,7 +192,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
   // ── 사이즈차트 로드 ──
 
   Future<void> _loadSizeCharts(String brandName) async {
-    if (brandName == _lastSizeChartBrand) return;
+    if (brandName == _lastSizeChartBrand && _sizeCharts.isNotEmpty) return;
     _lastSizeChartBrand = brandName;
     final charts = await ref
         .read(masterDaoProvider)
@@ -237,7 +238,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     });
   }
 
-  void _selectProduct(Product product) {
+  Future<void> _selectProduct(Product product) async {
     setState(() {
       _selectedProduct = product;
       _productSearchController.text =
@@ -247,9 +248,9 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
 
     // 브랜드 기반 사이즈차트 로드
     if (product.brandId != null) {
-      ref.read(masterDaoProvider).getBrandById(product.brandId!).then((brand) {
-        if (brand != null) _loadSizeCharts(brand.name);
-      });
+      final brand =
+          await ref.read(masterDaoProvider).getBrandById(product.brandId!);
+      if (brand != null) await _loadSizeCharts(brand.name);
     }
   }
 
@@ -275,6 +276,24 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
       _sizeEntries[index].dispose();
       _sizeEntries.removeAt(index);
     });
+  }
+
+  Future<void> _openSizePicker(_SizeEntry entry) async {
+    final brandName = _lastSizeChartBrand;
+    if (brandName == null) return;
+    final category = _selectedProduct?.category;
+    final result = await showSizePickerSheet(
+      context: context,
+      ref: ref,
+      brandName: brandName,
+      category: category,
+    );
+    if (result != null) {
+      setState(() {
+        entry.sizeKrController.text = result.kr;
+        if (result.eu != null) entry.sizeEuController.text = result.eu!;
+      });
+    }
   }
 
   int get _totalItemCount =>
@@ -868,19 +887,29 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
             ),
             const SizedBox(width: 4),
 
-            // 사이즈 KR
+            // 사이즈 KR + 피커 버튼
             Expanded(
               flex: 3,
               child: TextFormField(
                 controller: entry.sizeKrController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'KR',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                   hintText: '270',
                   isDense: true,
                   contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  errorStyle: TextStyle(fontSize: 10),
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  errorStyle: const TextStyle(fontSize: 10),
+                  suffixIcon: _sizeCharts.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.list_alt, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                          tooltip: '사이즈 선택',
+                          onPressed: () => _openSizePicker(entry),
+                        )
+                      : null,
                 ),
                 onChanged: (_) => _autoFillEuSize(entry),
                 validator: (v) =>

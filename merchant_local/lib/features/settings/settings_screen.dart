@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import '../../core/api/poizon_client.dart';
 import '../../core/providers.dart';
+import '../../core/services/data_export_service.dart';
 import '../../core/services/data_import_service.dart';
 import '../../core/services/llm_router.dart';
 
@@ -60,6 +61,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _export(BuildContext ctx, String type) async {
+    final db = ref.read(databaseProvider);
+    final svc = DataExportService(db);
+    try {
+      switch (type) {
+        case 'json':
+          await svc.exportAllToJson();
+        case 'sales_csv':
+          await svc.exportSalesCsv();
+        case 'inventory_csv':
+          await svc.exportInventoryCsv();
+      }
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx)
+            .showSnackBar(const SnackBar(content: Text('내보내기 완료')));
+      }
+    } catch (e) {
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx)
+            .showSnackBar(SnackBar(content: Text('오류: $e')));
+      }
     }
   }
 
@@ -243,6 +268,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     )
                   : const Text('저장'),
             ),
+          ),
+          const Divider(height: 48),
+
+          // ── 데이터 내보내기 ──────────────────────────
+          Text(
+            '데이터 내보내기',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _export(context, 'json'),
+                  icon: const Icon(Icons.file_download, size: 18),
+                  label: const Text('전체 JSON'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _export(context, 'sales_csv'),
+                  icon: const Icon(Icons.table_chart, size: 18),
+                  label: const Text('판매 CSV'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _export(context, 'inventory_csv'),
+                  icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                  label: const Text('재고 CSV'),
+                ),
+              ),
+            ],
           ),
           const Divider(height: 48),
 

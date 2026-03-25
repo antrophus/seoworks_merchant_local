@@ -14,6 +14,12 @@ final inventoryFilterProvider = StateProvider<String?>((ref) => null);
 final inventorySearchProvider = StateProvider<String>((ref) => '');
 final inventorySortAscProvider = StateProvider<bool>((ref) => false);
 
+/// 정렬 기준: 'created' | 'purchasePrice' | 'listedPrice' | 'sellPrice'
+final inventorySortByProvider = StateProvider<String>((ref) => 'created');
+
+/// 개인용 필터: null=전체, true=개인만, false=사업용만
+final inventoryPersonalFilterProvider = StateProvider<bool?>((ref) => null);
+
 // ── 선택 상태 ──
 
 class SelectionNotifier extends StateNotifier<Set<String>> {

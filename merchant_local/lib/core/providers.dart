@@ -85,3 +85,24 @@ final itemsProvider = StreamProvider<List<ItemData>>((ref) {
 final itemStatusCountsProvider = FutureProvider<Map<String, int>>((ref) {
   return ref.watch(itemDaoProvider).getStatusCounts();
 });
+
+/// 대시보드 자산 개요
+final assetSummaryProvider = FutureProvider<Map<String, int>>((ref) {
+  return ref.watch(itemDaoProvider).getAssetSummary();
+});
+
+/// 대시보드 브랜드 Top 6
+final topBrandsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) {
+  return ref.watch(itemDaoProvider).getTopBrands(6);
+});
+
+/// 대시보드 긴급 알림 (검수 12일 경과)
+final overdueInspectionCountProvider = FutureProvider<int>((ref) {
+  return ref.watch(itemDaoProvider).getOverdueInspectionCount(12);
+});
+
+/// 대시보드 최근 활동 로그
+final recentActivityProvider = FutureProvider<List<StatusLogData>>((ref) {
+  return ref.watch(subRecordDaoProvider).getRecentStatusLogs();
+});
