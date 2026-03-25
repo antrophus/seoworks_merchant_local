@@ -26,10 +26,14 @@ Thumbs.db
 
 # Android
 android/.gradle
+android/.kotlin/
 android/local.properties
 android/key.properties
 *.keystore
 *.jks
+
+# 빌드 로그
+*.log
 
 # Windows
 windows/flutter/ephemeral/
