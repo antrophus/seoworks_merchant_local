@@ -9,6 +9,32 @@ part 'item_dao.g.dart';
 
 const _uuid = Uuid();
 
+/// 허용된 상태 전이 맵: 현재 상태 → 이동 가능한 상태 목록
+const validTransitions = <String, Set<String>>{
+  'ORDER_PLACED': {'OFFICE_STOCK', 'ORDER_CANCELLED'},
+  'OFFICE_STOCK': {'LISTED', 'SUPPLIER_RETURN', 'SAMPLE', 'DISPOSED'},
+  'LISTED': {'OUTGOING', 'OFFICE_STOCK', 'POIZON_STORAGE'},
+  'SOLD': {'OUTGOING', 'LISTED'},
+  'OUTGOING': {'IN_INSPECTION'},
+  'IN_INSPECTION': {
+    'SETTLED', 'DEFECT_FOR_SALE', 'DEFECT_HELD', 'RETURNING',
+    'POIZON_STORAGE', 'CANCEL_RETURNING',
+  },
+  'SETTLED': {},
+  'DEFECT_FOR_SALE': {'DEFECT_SOLD', 'REPAIRING'},
+  'DEFECT_SOLD': {'DEFECT_SETTLED'},
+  'DEFECT_SETTLED': {},
+  'DEFECT_HELD': {'OFFICE_STOCK', 'REPAIRING', 'SUPPLIER_RETURN', 'DISPOSED'},
+  'POIZON_STORAGE': {'SETTLED', 'CANCEL_RETURNING'},
+  'CANCEL_RETURNING': {'OFFICE_STOCK'},
+  'RETURNING': {'OFFICE_STOCK', 'REPAIRING'},
+  'REPAIRING': {'OFFICE_STOCK', 'SUPPLIER_RETURN', 'DISPOSED', 'SAMPLE'},
+  'SUPPLIER_RETURN': {},
+  'DISPOSED': {},
+  'SAMPLE': {},
+  'ORDER_CANCELLED': {},
+};
+
 @DriftAccessor(tables: [Items, Products, StatusLogs])
 class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
   ItemDao(super.db);
@@ -77,13 +103,26 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
   }
 
   /// 상태 변경 + 로그 자동 기록 (트랜잭션)
+  /// [InvalidStatusTransitionException] — 허용되지 않는 전이 시 발생
   Future<void> updateStatus(String itemId, String newStatus,
       {String? note}) async {
     await transaction(() async {
       final item = await getById(itemId);
-      if (item == null) return;
+      if (item == null) {
+        throw StateError('아이템을 찾을 수 없습니다: $itemId');
+      }
 
       final oldStatus = item.currentStatus;
+
+      // 상태 전이 검증
+      final allowed = validTransitions[oldStatus];
+      if (allowed != null && !allowed.contains(newStatus)) {
+        throw InvalidStatusTransitionException(
+          itemId: itemId,
+          from: oldStatus,
+          to: newStatus,
+        );
+      }
       final now = DateTime.now().toIso8601String();
 
       // items 상태 업데이트
@@ -229,4 +268,21 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
       'totalProfit': result.read<int>('total_profit'),
     };
   }
+}
+
+/// 허용되지 않는 상태 전이 시 발생하는 예외
+class InvalidStatusTransitionException implements Exception {
+  final String itemId;
+  final String from;
+  final String to;
+
+  const InvalidStatusTransitionException({
+    required this.itemId,
+    required this.from,
+    required this.to,
+  });
+
+  @override
+  String toString() =>
+      'InvalidStatusTransitionException: $from → $to (item: $itemId)';
 }

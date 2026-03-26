@@ -58,6 +58,7 @@ const statusActions = <String, List<StatusAction>>{
     StatusAction('판매/발송 처리', 'OUTGOING', Icons.local_shipping, Colors.indigo,
         needsSellAndShip: true),
     StatusAction('리스팅 취소 (사무실 복귀)', 'OFFICE_STOCK', Icons.warehouse, Colors.blue),
+    StatusAction('플랫폼취소 (보관판매)', 'POIZON_STORAGE', Icons.warehouse_outlined, Colors.teal),
   ],
   'SOLD': [
     StatusAction('발송', 'OUTGOING', Icons.local_shipping, Colors.indigo,

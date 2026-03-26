@@ -57,6 +57,34 @@ class PoizonClient {
     );
   }
 
+  /// 재시도 가능한 DioException 판별
+  bool _isRetryable(DioException e) =>
+      e.type == DioExceptionType.connectionTimeout ||
+      e.type == DioExceptionType.receiveTimeout ||
+      e.type == DioExceptionType.sendTimeout ||
+      e.type == DioExceptionType.connectionError ||
+      (e.response?.statusCode != null && e.response!.statusCode! >= 500);
+
+  /// 지수 백오프 재시도 래퍼 (최대 3회)
+  Future<T> _withRetry<T>(Future<T> Function() action, String label) async {
+    const maxAttempts = 3;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await action();
+      } on DioException catch (e) {
+        if (attempt < maxAttempts && _isRetryable(e)) {
+          final delay = Duration(milliseconds: 500 * attempt);
+          _logger.w('$label 재시도 ($attempt/$maxAttempts), ${delay.inMilliseconds}ms 후');
+          await Future.delayed(delay);
+          continue;
+        }
+        _logger.e('$label 실패 (시도 $attempt/$maxAttempts)', error: e);
+        rethrow;
+      }
+    }
+    throw StateError('unreachable');
+  }
+
   /// POST 요청 (대부분의 POIZON API)
   Future<Map<String, dynamic>> post(
     String path,
@@ -69,14 +97,11 @@ class PoizonClient {
       'timeZone': _timeZone,
     });
 
-    try {
+    return _withRetry(() async {
       final response = await _dio!.post(path, data: signedBody);
       _checkResponse(response.data);
       return response.data as Map<String, dynamic>;
-    } on DioException catch (e) {
-      _logger.e('POIZON API POST 오류: $path', error: e);
-      rethrow;
-    }
+    }, 'POIZON POST $path');
   }
 
   /// GET 요청 (Bill / 일부 Bonded API)
@@ -91,17 +116,14 @@ class PoizonClient {
       'timeZone': _timeZone,
     });
 
-    try {
+    return _withRetry(() async {
       final response = await _dio!.get(
         path,
         queryParameters: signedParams,
       );
       _checkResponse(response.data);
       return response.data as Map<String, dynamic>;
-    } on DioException catch (e) {
-      _logger.e('POIZON API GET 오류: $path', error: e);
-      rethrow;
-    }
+    }, 'POIZON GET $path');
   }
 
   void _checkConfigured() {
@@ -111,7 +133,13 @@ class PoizonClient {
   }
 
   void _checkResponse(dynamic data) {
-    if (data is Map && data['code'] != 200) {
+    if (data is! Map) {
+      throw PoizonApiException(
+        code: -1,
+        message: '잘못된 응답 형식: Map이 아닌 ${data.runtimeType}',
+      );
+    }
+    if (data['code'] != 200) {
       throw PoizonApiException(
         code: data['code'] as int? ?? -1,
         message: data['msg'] as String? ?? '알 수 없는 오류',

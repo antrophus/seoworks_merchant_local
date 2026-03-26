@@ -91,7 +91,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -109,9 +109,18 @@ class AppDatabase extends _$AppDatabase {
             await _seedPlatformFeeRules();
           }
           // v2 → v3: items에 poizon_storage_from + 기존 정산 데이터 백필
-          if (from >= 2 && from < 3) {
-            await customStatement(
-                'ALTER TABLE items ADD COLUMN poizon_storage_from TEXT');
+          if (from < 3) {
+            // 컬럼 존재 여부 확인 후 추가 (재실행 안전)
+            final cols = await customSelect(
+              "PRAGMA table_info('items')",
+              readsFrom: {},
+            ).get();
+            final hasCol = cols.any(
+                (c) => c.read<String>('name') == 'poizon_storage_from');
+            if (!hasCol) {
+              await customStatement(
+                  'ALTER TABLE items ADD COLUMN poizon_storage_from TEXT');
+            }
             // 기존 SETTLED 아이템의 settledAt/saleDate 백필 (상태 변경 이력에서)
             await customStatement('''
               UPDATE sales SET
@@ -131,6 +140,38 @@ class AppDatabase extends _$AppDatabase {
                 SELECT id FROM items WHERE current_status IN ('SETTLED','DEFECT_SETTLED')
               ) AND settled_at IS NULL
             ''');
+          }
+          // v3 → v4: 인덱스 추가 (성능) + CASCADE 재설정은 새 DB에만 적용
+          if (from < 4) {
+            // 핵심 인덱스: items.current_status (가장 빈번한 필터)
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_items_status ON items (current_status)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_items_created ON items (created_at)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_items_updated ON items (updated_at)');
+            // FK 컬럼 인덱스
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_status_logs_item ON status_logs (item_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_purchases_item ON purchases (item_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_sales_item ON sales (item_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_sale_adj_sale ON sale_adjustments (sale_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_inspections_item ON inspection_rejections (item_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_repairs_item ON repairs (item_id)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_shipments_item ON shipments (item_id)');
+            // POIZON 캐시 테이블 인덱스
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_sku_article ON poizon_sku_cache (article_number)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_listings_status ON poizon_listings (status)');
+            await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_orders_status ON poizon_orders (status)');
           }
         },
       );

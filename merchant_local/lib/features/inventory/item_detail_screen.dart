@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
+import 'inventory_providers.dart' show statusLabels;
 import 'status_actions.dart';
 
 final _numFmt = NumberFormat('#,###');
@@ -69,25 +70,7 @@ final _brandProvider =
   return ref.watch(masterDaoProvider).getBrandById(brandId);
 });
 
-const _statusLabels = <String, String>{
-  'ORDER_PLACED': '주문완료',
-  'ORDER_CANCELLED': '주문취소',
-  'OFFICE_STOCK': '사무실재고',
-  'OUTGOING': '발송중',
-  'IN_INSPECTION': '검수중',
-  'LISTED': '리스팅',
-  'SOLD': '판매완료',
-  'SETTLED': '정산완료',
-  'RETURNING': '반송중',
-  'DEFECT_FOR_SALE': '불량판매',
-  'DEFECT_SOLD': '불량판매완료',
-  'DEFECT_SETTLED': '불량정산',
-  'SUPPLIER_RETURN': '공급처반품',
-  'DISPOSED': '폐기',
-  'SAMPLE': '샘플',
-  'DEFECT_HELD': '불량보류',
-  'REPAIRING': '수선중',
-};
+// statusLabels는 inventory_providers.dart에서 import
 
 class ItemDetailScreen extends ConsumerWidget {
   final String itemId;
@@ -154,7 +137,7 @@ class _ItemDetailBody extends ConsumerWidget {
     final repairsAsync = ref.watch(_repairsProvider(item.id));
 
     final statusLabel =
-        _statusLabels[item.currentStatus] ?? item.currentStatus;
+        statusLabels[item.currentStatus] ?? item.currentStatus;
     final statusClr = statusColor(item.currentStatus);
 
     return CustomScrollView(
@@ -567,7 +550,7 @@ class _ItemDetailBody extends ConsumerWidget {
                           children: [
                             if (log.oldStatus != null) ...[
                               Text(
-                                _statusLabels[log.oldStatus] ?? log.oldStatus!,
+                                statusLabels[log.oldStatus] ?? log.oldStatus!,
                                 style: TextStyle(
                                   color: statusColor(log.oldStatus!),
                                   fontSize: 12,
@@ -581,7 +564,7 @@ class _ItemDetailBody extends ConsumerWidget {
                               ),
                             ],
                             Text(
-                              _statusLabels[log.newStatus] ?? log.newStatus,
+                              statusLabels[log.newStatus] ?? log.newStatus,
                               style: TextStyle(
                                 color: statusColor(log.newStatus),
                                 fontSize: 12,
