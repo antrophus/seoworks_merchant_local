@@ -18,7 +18,8 @@ class BatchActionBar extends ConsumerWidget {
   final Set<String> selectedIds;
   final VoidCallback onDone;
 
-  const BatchActionBar({super.key, required this.selectedIds, required this.onDone});
+  const BatchActionBar(
+      {super.key, required this.selectedIds, required this.onDone});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -39,8 +40,8 @@ class BatchActionBar extends ConsumerWidget {
         child: Row(
           children: [
             Text('${selectedIds.length}개',
-                style: AppTheme.dataStyle(
-                    fontSize: 16, color: AppColors.primary)),
+                style:
+                    AppTheme.dataStyle(fontSize: 16, color: AppColors.primary)),
             const SizedBox(width: 12),
             Expanded(
               child: SingleChildScrollView(
@@ -58,13 +59,13 @@ class BatchActionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<String>? statuses) {
     if (statuses == null) {
       return [
-        _btn(context, ref, '상태변경', Icons.swap_vert_rounded,
-            AppColors.primary, () => _batchStatusChange(context, ref)),
+        _btn(context, ref, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
+            () => _batchStatusChange(context, ref)),
       ];
     }
 
     final s = statuses.toSet();
-    final gap = const SizedBox(width: 8);
+    const gap = SizedBox(width: 8);
 
     // 판매중: LISTED, POIZON_STORAGE
     if (s.contains('LISTED') || s.contains('POIZON_STORAGE')) {
@@ -73,16 +74,34 @@ class BatchActionBar extends ConsumerWidget {
           _btn(context, ref, '발송', Icons.local_shipping,
               AppColors.statusOutgoing, () => _batchSellAndShip(context, ref)),
           gap,
-          _btn(context, ref, '리스팅취소', Icons.warehouse,
-              Colors.blue, () => _batchSimpleTransition(context, ref, 'LISTED', 'OFFICE_STOCK', '리스팅 취소')),
+          _btn(
+              context,
+              ref,
+              '리스팅취소',
+              Icons.warehouse,
+              Colors.blue,
+              () => _batchSimpleTransition(
+                  context, ref, 'LISTED', 'OFFICE_STOCK', '리스팅 취소')),
         ],
         if (s.contains('POIZON_STORAGE')) ...[
           if (s.contains('LISTED')) gap,
-          _btn(context, ref, '정산완료', Icons.check_circle,
-              AppColors.success, () => _batchSimpleTransition(context, ref, 'POIZON_STORAGE', 'SETTLED', '보관판매 정산')),
+          _btn(
+              context,
+              ref,
+              '정산완료',
+              Icons.check_circle,
+              AppColors.success,
+              () => _batchSimpleTransition(
+                  context, ref, 'POIZON_STORAGE', 'SETTLED', '보관판매 정산')),
           gap,
-          _btn(context, ref, '반송전환', Icons.local_shipping_outlined,
-              Colors.indigo, () => _batchSimpleTransition(context, ref, 'POIZON_STORAGE', 'CANCEL_RETURNING', '반송 전환')),
+          _btn(
+              context,
+              ref,
+              '반송전환',
+              Icons.local_shipping_outlined,
+              Colors.indigo,
+              () => _batchSimpleTransition(
+                  context, ref, 'POIZON_STORAGE', 'CANCEL_RETURNING', '반송 전환')),
         ],
       ];
     }
@@ -91,16 +110,22 @@ class BatchActionBar extends ConsumerWidget {
     if (s.contains('OUTGOING') || s.contains('IN_INSPECTION')) {
       return [
         if (s.contains('OUTGOING')) ...[
-          _btn(context, ref, '검수도착', Icons.fact_check,
-              Colors.purple, () => _batchSimpleTransition(context, ref, 'OUTGOING', 'IN_INSPECTION', '검수 도착')),
+          _btn(
+              context,
+              ref,
+              '검수도착',
+              Icons.fact_check,
+              Colors.purple,
+              () => _batchSimpleTransition(
+                  context, ref, 'OUTGOING', 'IN_INSPECTION', '검수 도착')),
         ],
         if (s.contains('IN_INSPECTION')) ...[
           if (s.contains('OUTGOING')) gap,
-          _btn(context, ref, '검수통과', Icons.check_circle,
-              AppColors.success, () => _batchInspectionPass(context, ref)),
+          _btn(context, ref, '검수통과', Icons.check_circle, AppColors.success,
+              () => _batchInspectionPass(context, ref)),
           gap,
-          _btn(context, ref, '반려', Icons.warning_amber,
-              Colors.amber, () => _batchInspectionReject(context, ref)),
+          _btn(context, ref, '반려', Icons.warning_amber, Colors.amber,
+              () => _batchInspectionReject(context, ref)),
         ],
       ];
     }
@@ -109,35 +134,59 @@ class BatchActionBar extends ConsumerWidget {
     if (s.contains('ORDER_PLACED') || s.contains('OFFICE_STOCK')) {
       return [
         if (s.contains('ORDER_PLACED')) ...[
-          _btn(context, ref, '입고', Icons.warehouse,
-              Colors.blue, () => _batchSimpleTransition(context, ref, 'ORDER_PLACED', 'OFFICE_STOCK', '입고')),
+          _btn(
+              context,
+              ref,
+              '입고',
+              Icons.warehouse,
+              Colors.blue,
+              () => _batchSimpleTransition(
+                  context, ref, 'ORDER_PLACED', 'OFFICE_STOCK', '입고')),
           gap,
-          _btn(context, ref, '주문취소', Icons.cancel,
-              Colors.red, () => _batchSimpleTransition(context, ref, 'ORDER_PLACED', 'ORDER_CANCELLED', '주문 취소')),
+          _btn(
+              context,
+              ref,
+              '주문취소',
+              Icons.cancel,
+              Colors.red,
+              () => _batchSimpleTransition(
+                  context, ref, 'ORDER_PLACED', 'ORDER_CANCELLED', '주문 취소')),
         ],
         if (s.contains('OFFICE_STOCK')) ...[
           if (s.contains('ORDER_PLACED')) gap,
-          _btn(context, ref, '리스팅등록', Icons.sell,
-              Colors.teal, () => _batchStatusChange(context, ref)),
+          _btn(context, ref, '리스팅등록', Icons.sell, Colors.teal,
+              () => _batchStatusChange(context, ref)),
           gap,
-          _btn(context, ref, '공급처반품', Icons.undo,
-              Colors.blueGrey, () => _batchSimpleTransition(context, ref, 'OFFICE_STOCK', 'SUPPLIER_RETURN', '공급처 반품')),
+          _btn(
+              context,
+              ref,
+              '공급처반품',
+              Icons.undo,
+              Colors.blueGrey,
+              () => _batchSimpleTransition(
+                  context, ref, 'OFFICE_STOCK', 'SUPPLIER_RETURN', '공급처 반품')),
           gap,
-          _btn(context, ref, '폐기', Icons.card_giftcard,
-              Colors.pink, () => _batchSimpleTransition(context, ref, 'OFFICE_STOCK', 'SAMPLE', '폐기')),
+          _btn(
+              context,
+              ref,
+              '폐기',
+              Icons.card_giftcard,
+              Colors.pink,
+              () => _batchSimpleTransition(
+                  context, ref, 'OFFICE_STOCK', 'SAMPLE', '폐기')),
         ],
       ];
     }
 
     // 기타 → 범용
     return [
-      _btn(context, ref, '상태변경', Icons.swap_vert_rounded,
-          AppColors.primary, () => _batchStatusChange(context, ref)),
+      _btn(context, ref, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
+          () => _batchStatusChange(context, ref)),
     ];
   }
 
-  Widget _btn(BuildContext context, WidgetRef ref, String label,
-      IconData icon, Color color, Future<void> Function() action) {
+  Widget _btn(BuildContext context, WidgetRef ref, String label, IconData icon,
+      Color color, Future<void> Function() action) {
     return OutlinedButton.icon(
       onPressed: action,
       icon: Icon(icon, size: 16, color: color),
@@ -223,11 +272,13 @@ class BatchActionBar extends ConsumerWidget {
       items.add(item);
       final sale = await ref.read(saleDaoProvider).getByItemId(id);
       if (sale != null) sales[id] = sale;
-      final prod = await ref.read(masterDaoProvider).getProductById(item.productId);
+      final prod =
+          await ref.read(masterDaoProvider).getProductById(item.productId);
       if (prod != null) products[item.productId] = prod;
     }
 
-    final listedItems = items.where((i) => i.currentStatus == 'LISTED').toList();
+    final listedItems =
+        items.where((i) => i.currentStatus == 'LISTED').toList();
     if (listedItems.isEmpty) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -257,7 +308,8 @@ class BatchActionBar extends ConsumerWidget {
     final items = <ItemData>[];
     for (final id in selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
-      if (item != null && item.currentStatus == 'IN_INSPECTION') items.add(item);
+      if (item != null && item.currentStatus == 'IN_INSPECTION')
+        items.add(item);
     }
 
     if (items.isEmpty) {
@@ -306,11 +358,13 @@ class BatchActionBar extends ConsumerWidget {
 
   // ── 검수 반려 (IN_INSPECTION → 바텀시트에서 선택) ──
 
-  Future<void> _batchInspectionReject(BuildContext context, WidgetRef ref) async {
+  Future<void> _batchInspectionReject(
+      BuildContext context, WidgetRef ref) async {
     final items = <ItemData>[];
     for (final id in selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
-      if (item != null && item.currentStatus == 'IN_INSPECTION') items.add(item);
+      if (item != null && item.currentStatus == 'IN_INSPECTION')
+        items.add(item);
     }
 
     if (items.isEmpty) {
@@ -325,9 +379,8 @@ class BatchActionBar extends ConsumerWidget {
 
     // 검수통과 제외한 나머지 액션 표시
     final allActions = statusActions['IN_INSPECTION'] ?? [];
-    final rejectActions = allActions
-        .where((a) => a.targetStatus != 'SETTLED')
-        .toList();
+    final rejectActions =
+        allActions.where((a) => a.targetStatus != 'SETTLED').toList();
 
     final chosen = await showModalBottomSheet<StatusAction>(
       context: context,
@@ -362,9 +415,8 @@ class BatchActionBar extends ConsumerWidget {
     if (confirmed != true) return;
 
     for (final item in items) {
-      await ref
-          .read(itemDaoProvider)
-          .updateStatus(item.id, chosen.targetStatus, note: '일괄 ${chosen.label}');
+      await ref.read(itemDaoProvider).updateStatus(item.id, chosen.targetStatus,
+          note: '일괄 ${chosen.label}');
     }
 
     if (context.mounted) {
@@ -440,9 +492,8 @@ class BatchActionBar extends ConsumerWidget {
     if (confirmed != true) return;
 
     for (final item in items) {
-      await ref
-          .read(itemDaoProvider)
-          .updateStatus(item.id, chosen.targetStatus, note: '일괄 ${chosen.label}');
+      await ref.read(itemDaoProvider).updateStatus(item.id, chosen.targetStatus,
+          note: '일괄 ${chosen.label}');
     }
 
     if (context.mounted) {
@@ -571,7 +622,6 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
               ),
             ),
             const Divider(),
-
             Expanded(
               child: ListView(
                 controller: sc,
@@ -587,7 +637,9 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
                             isDense: true,
                           ),
                           keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -598,14 +650,11 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
                     ],
                   ),
                   const SizedBox(height: 12),
-
                   for (final item in widget.items) ...[
                     _batchItemRow(item),
                     const SizedBox(height: 8),
                   ],
-
                   const SizedBox(height: 8),
-
                   TextField(
                     controller: _trackingCtrl,
                     decoration: const InputDecoration(
@@ -616,7 +665,6 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 12),
-
                   InkWell(
                     onTap: () async {
                       final picked = await showDatePicker(
@@ -644,7 +692,6 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
                 ],
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: SafeArea(

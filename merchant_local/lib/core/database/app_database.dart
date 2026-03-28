@@ -216,6 +216,20 @@ LazyDatabase _openConnection() {
     final dir = await getApplicationDocumentsDirectory();
     final file = File(p.join(dir.path, 'merchant_local', 'app_data.sqlite'));
     await file.parent.create(recursive: true);
-    return NativeDatabase.createInBackground(file);
+    return NativeDatabase.createInBackground(
+      file,
+      setup: (db) {
+        // WAL 모드: 읽기/쓰기 동시 처리, 필터 전환 중 blocking 제거
+        db.execute('PRAGMA journal_mode=WAL');
+        // 동기화 수준 완화: WAL 모드에서 안전하며 쓰기 속도 향상
+        db.execute('PRAGMA synchronous=NORMAL');
+        // 메모리 캐시 64MB: 자주 쓰는 쿼리 결과 재사용
+        db.execute('PRAGMA cache_size=-65536');
+        // 임시 테이블 메모리 처리: 집계 쿼리(대시보드 KPI 등) 속도 향상
+        db.execute('PRAGMA temp_store=MEMORY');
+        // WAL 체크포인트 자동화 (기본값 1000 → 500으로 낮춰 안정성 확보)
+        db.execute('PRAGMA wal_autocheckpoint=500');
+      },
+    );
   });
 }

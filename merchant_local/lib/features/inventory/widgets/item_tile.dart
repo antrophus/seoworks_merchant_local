@@ -199,9 +199,9 @@ class ItemTile extends ConsumerWidget {
                       ),
 
                     if (item.isPersonal)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: const Text('개인용',
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text('개인용',
                             style: TextStyle(
                                 color: AppColors.accent, fontSize: 11)),
                       ),
@@ -297,11 +297,11 @@ class DefectChip extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.warning_amber, size: 14, color: AppColors.warning),
+                const Icon(Icons.warning_amber, size: 14, color: AppColors.warning),
                 const SizedBox(width: 4),
                 Text(
                   '검수반려 #${inspection.returnSeq} ($defectLabel)',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppColors.warning,
@@ -406,7 +406,7 @@ class RepairChip extends StatelessWidget {
         child: Text(
           '수선중 (${repair.startedAt}~)'
           '${repair.repairNote != null ? " — ${repair.repairNote}" : ""}',
-          style: TextStyle(fontSize: 10, color: AppColors.statusRepairing),
+          style: const TextStyle(fontSize: 10, color: AppColors.statusRepairing),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

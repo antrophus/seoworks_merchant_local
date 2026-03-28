@@ -79,6 +79,15 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
     });
   }
 
+  /// 여러 상품 일괄 조회 (id → Product) — N+1 방지용
+  Future<Map<String, Product>> getProductsByIds(List<String> ids) async {
+    if (ids.isEmpty) return {};
+    final results = await (select(products)
+          ..where((t) => t.id.isIn(ids)))
+        .get();
+    return {for (final p in results) p.id: p};
+  }
+
   /// 모든 소스를 Map으로 (id → Source)
   Future<Map<String, Source>> getAllSourcesMap() async {
     final list = await getAllSources();

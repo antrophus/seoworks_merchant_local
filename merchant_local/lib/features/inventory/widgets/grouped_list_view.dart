@@ -51,19 +51,24 @@ mixin BatchDataLoader<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   Map<String, Source> sources = {};
   bool loaded = false;
 
+  /// id:updatedAt 조합으로 실제 변경 여부 판단 (reference 비교 대신 사용)
+  String _itemsKey(List<ItemData> items) =>
+      items.map((i) => '${i.id}:${i.updatedAt}').join();
+
   Future<void> loadBatchData(List<ItemData> items) async {
     final ids = items.map((i) => i.id).toList();
     final productIds = items.map((i) => i.productId).toSet().toList();
 
-    final salesResult = await ref.read(saleDaoProvider).getByItemIds(ids);
-    final purchasesResult = await ref.read(purchaseDaoProvider).getByItemIds(ids);
-    final sourcesResult = await ref.read(masterDaoProvider).getAllSourcesMap();
+    // 4개 쿼리 동시 시작 (N+1 → 각 1회 쿼리)
+    final salesFuture = ref.read(saleDaoProvider).getByItemIds(ids);
+    final purchasesFuture = ref.read(purchaseDaoProvider).getByItemIds(ids);
+    final sourcesFuture = ref.read(masterDaoProvider).getAllSourcesMap();
+    final productsFuture = ref.read(masterDaoProvider).getProductsByIds(productIds);
 
-    final productMap = <String, Product>{};
-    for (final pid in productIds) {
-      final p = await ref.read(masterDaoProvider).getProductById(pid);
-      if (p != null) productMap[pid] = p;
-    }
+    final salesResult = await salesFuture;
+    final purchasesResult = await purchasesFuture;
+    final sourcesResult = await sourcesFuture;
+    final productMap = await productsFuture;
 
     if (mounted) {
       setState(() {
@@ -103,7 +108,9 @@ class _BatchListViewState extends ConsumerState<BatchListView>
   @override
   void didUpdateWidget(covariant BatchListView old) {
     super.didUpdateWidget(old);
-    if (old.items != widget.items) loadBatchData(widget.items);
+    if (_itemsKey(old.items) != _itemsKey(widget.items)) {
+      loadBatchData(widget.items);
+    }
   }
 
   @override
@@ -157,7 +164,9 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
   @override
   void didUpdateWidget(covariant GroupedListView old) {
     super.didUpdateWidget(old);
-    if (old.items != widget.items) loadBatchData(widget.items);
+    if (_itemsKey(old.items) != _itemsKey(widget.items)) {
+      loadBatchData(widget.items);
+    }
   }
 
   @override
@@ -165,8 +174,9 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
     if (!loaded) return const Center(child: CircularProgressIndicator());
 
     final groups = _buildGroups();
+    if (groups.isEmpty) return const SizedBox.shrink();
+
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: groups.length,
       itemBuilder: (_, i) => GroupCard(group: groups[i]),
     );
@@ -208,7 +218,7 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
       );
     }
 
-    // 발송중/검수중 → 발송일+송장
+    // 발송중/검수중 → 발송일+송장 (오래된 발송일 우선 고정)
     if (statuses.intersection({'OUTGOING', 'IN_INSPECTION'}).isNotEmpty &&
         statuses.intersection({'OFFICE_STOCK', 'LISTED'}).isEmpty) {
       return _groupBy(
@@ -220,6 +230,7 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
         subtitleFn: (key) => key.split('|')[1],
         summaryFn: (items) =>
             '판매가합 ${fmt.format(items.fold<int>(0, (s, r) => s + (r.sale?.sellPrice ?? 0)))}원',
+        forceAsc: true,
       );
     }
 
@@ -253,6 +264,7 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
     required String Function(List<ItemWithRelated>) summaryFn,
     bool isSettlement = false,
     bool isListed = false,
+    bool? forceAsc,
   }) {
     final grouped = <String, List<ItemData>>{};
     for (final item in widget.items) {
@@ -261,7 +273,6 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
 
     final groups = grouped.entries.map((e) {
       final wrapped = _wrap(e.value);
-      // 판매중: 그룹 내 가장 오래된 구매일을 sortDate로 사용
       String sortDate = e.key;
       if (isListed) {
         final dates = wrapped
@@ -283,10 +294,8 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
     }).toList();
 
     groups.sort((a, b) {
-      final asc = ref.read(inventorySortAscProvider);
+      final bool asc = forceAsc ?? ref.read(inventorySortAscProvider);
       if (isListed) {
-        // 기본(↓): 갯수 많은 순, 동일 시 구매일 오래된 순
-        // 토글(↑): 갯수 적은 순, 동일 시 구매일 최근 순
         final cmp = asc
             ? a.items.length.compareTo(b.items.length)
             : b.items.length.compareTo(a.items.length);
@@ -309,39 +318,42 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
 
 class GroupCard extends StatelessWidget {
   final ItemGroup group;
-
   const GroupCard({super.key, required this.group});
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        childrenPadding: EdgeInsets.zero,
-        title: group.isListed
-            ? _buildListedTitle(context)
-            : _buildDefaultTitle(context),
-        children:
-            group.items.map((r) => ItemTile(
-                  item: r.item,
-                  sale: r.sale,
-                  purchase: r.purchase,
-                  product: r.product,
-                  sourceName: r.sourceName,
-                )).toList(),
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ExpansionTile(
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+          childrenPadding: EdgeInsets.zero,
+          title: group.isListed
+              ? _buildListedTitle()
+              : _buildDefaultTitle(context),
+          trailing: _countBadge(),
+          children: group.items
+              .map((r) => ItemTile(
+                    item: r.item,
+                    sale: r.sale,
+                    purchase: r.purchase,
+                    product: r.product,
+                    sourceName: r.sourceName,
+                  ))
+              .toList(),
+        ),
       ),
     );
   }
 
-  // ── 판매중 전용 타이틀 ──
-  Widget _buildListedTitle(BuildContext context) {
+  // ── 판매중: 상품 이미지 + 사이즈별 재고 ──
+  Widget _buildListedTitle() {
     final imageUrl = group.items
         .map((r) => r.product?.imageUrl)
         .firstWhere((u) => u != null && u.isNotEmpty, orElse: () => null);
 
-    // 사이즈별 수량
     final sizeMap = <String, int>{};
     for (final r in group.items) {
       sizeMap[r.item.sizeKr] = (sizeMap[r.item.sizeKr] ?? 0) + 1;
@@ -351,78 +363,56 @@ class GroupCard extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // 모델명 + 전체 수량
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                group.title,
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w500),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(20),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text('${group.items.length}개',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary)),
-            ),
-          ],
+        Text(
+          group.title,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 8),
-
-        // 이미지 + 사이즈 칩
+        const SizedBox(height: 6),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            productImage(imageUrl, size: 56),
+            productImage(imageUrl, size: 52),
             const SizedBox(width: 10),
             Expanded(
               child: Wrap(
-                spacing: 6,
+                spacing: 5,
                 runSpacing: 4,
-                children: sizeEntries.map((e) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceVariant,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    '${e.key} ×${e.value}',
-                    style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary),
-                  ),
-                )).toList(),
+                children: sizeEntries
+                    .map((e) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceVariant,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '${e.key} ×${e.value}',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textSecondary),
+                          ),
+                        ))
+                    .toList(),
               ),
             ),
           ],
         ),
-
-        // 매입가합
-        if (group.summaryLine.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(group.summaryLine,
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-          ),
+        if (group.summaryLine.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(group.summaryLine,
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.textSecondary)),
+        ],
       ],
     );
   }
 
-  // ── 기본 타이틀 (발송·검수, 정산 등) ──
+  // ── 기본: 발송·검수, 정산, 매입일 등 ──
   Widget _buildDefaultTitle(BuildContext context) {
     final imageUrls = <String>[];
     final seen = <String>{};
@@ -442,83 +432,104 @@ class GroupCard extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: Text(
-            '${group.title}${group.subtitle != null ? "  ${group.subtitle}" : ""}',
-            style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w500),
-          ),
+        Text(
+          '${group.title}${group.subtitle != null ? "  ${group.subtitle}" : ""}',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 6),
-
-        Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .primaryContainer
-                    .withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text('${group.items.length}',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color:
-                          Theme.of(context).colorScheme.onPrimaryContainer)),
-            ),
-            const SizedBox(width: 10),
-
-            Expanded(
-              child: SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final url in imageUrls) ...[
-                      productImage(url, size: 44),
-                      const SizedBox(width: 4),
-                    ],
-                    if (overflowCount > 0)
-                      Container(
-                        width: 44,
-                        height: 44,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceVariant,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text('+$overflowCount',
-                            style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textSecondary)),
-                      ),
-                  ],
+        SizedBox(
+          height: 40,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              for (final url in imageUrls) ...[
+                productImage(url, size: 40),
+                const SizedBox(width: 4),
+              ],
+              if (overflowCount > 0)
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('+$overflowCount',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary)),
                 ),
-              ),
-            ),
-          ],
-        ),
-
-        if (group.isSettlement)
-          SettlementSummary(items: group.items)
-        else if (group.summaryLine.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(group.summaryLine,
-                style:
-                    const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            ],
           ),
+        ),
+        if (group.isSettlement)
+          _CompactSettlementSummary(items: group.items)
+        else if (group.summaryLine.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(group.summaryLine,
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.textSecondary)),
+        ],
       ],
+    );
+  }
+
+  Widget _countBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withAlpha(20),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '${group.items.length}개',
+        style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.primary),
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════
+// 압축 정산 요약
+// ══════════════════════════════════════════════════
+
+class _CompactSettlementSummary extends StatelessWidget {
+  final List<ItemWithRelated> items;
+  const _CompactSettlementSummary({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    int settlementTotal = 0, purchaseTotal = 0;
+    double vatRefundTotal = 0;
+    for (final r in items) {
+      settlementTotal += r.sale?.settlementAmount ?? 0;
+      purchaseTotal += r.purchase?.purchasePrice ?? 0;
+      vatRefundTotal += r.purchase?.vatRefundable ?? 0;
+    }
+    final profit = settlementTotal - purchaseTotal + vatRefundTotal.round();
+    final marginRate = purchaseTotal > 0 ? (profit / purchaseTotal * 100) : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        '수익 ${profit >= 0 ? "+" : ""}${fmt.format(profit)}원 (${marginRate.toStringAsFixed(0)}%)  ·  정산 ${fmt.format(settlementTotal)}원',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: profit >= 0 ? AppColors.success : AppColors.error,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }

@@ -66,6 +66,10 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
   Future<ItemData?> getById(String id) =>
       (select(items)..where((t) => t.id.equals(id))).getSingleOrNull();
 
+  /// ID로 스트림 조회 (실시간 변경 감지)
+  Stream<ItemData?> watchById(String id) =>
+      (select(items)..where((t) => t.id.equals(id))).watchSingleOrNull();
+
   /// SKU로 조회
   Future<ItemData?> getBySku(String sku) =>
       (select(items)..where((t) => t.sku.equals(sku))).getSingleOrNull();

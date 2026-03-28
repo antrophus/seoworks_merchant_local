@@ -13,8 +13,8 @@ final _numFmt = NumberFormat('#,###');
 
 // ── Providers ──
 
-final _itemProvider = FutureProvider.family<ItemData?, String>((ref, id) {
-  return ref.watch(itemDaoProvider).getById(id);
+final _itemProvider = StreamProvider.family<ItemData?, String>((ref, id) {
+  return ref.watch(itemDaoProvider).watchById(id);
 });
 
 final _purchaseProvider =
@@ -25,12 +25,12 @@ final _purchaseProvider =
 final _sourceProvider =
     FutureProvider.family<Source?, String>((ref, sourceId) async {
   final sources = await ref.watch(masterDaoProvider).getAllSources();
-  return sources.cast<Source?>().firstWhere((s) => s!.id == sourceId,
-      orElse: () => null);
+  return sources
+      .cast<Source?>()
+      .firstWhere((s) => s!.id == sourceId, orElse: () => null);
 });
 
-final _saleProvider =
-    FutureProvider.family<SaleData?, String>((ref, itemId) {
+final _saleProvider = FutureProvider.family<SaleData?, String>((ref, itemId) {
   return ref.watch(saleDaoProvider).getByItemId(itemId);
 });
 
@@ -50,8 +50,7 @@ final _shipmentsProvider =
 });
 
 final _inspectionsProvider =
-    FutureProvider.family<List<InspectionRejectionData>, String>(
-        (ref, itemId) {
+    FutureProvider.family<List<InspectionRejectionData>, String>((ref, itemId) {
   return ref.watch(subRecordDaoProvider).getInspectionRejections(itemId);
 });
 
@@ -65,8 +64,7 @@ final _productProvider =
   return ref.watch(masterDaoProvider).getProductById(productId);
 });
 
-final _brandProvider =
-    FutureProvider.family<Brand?, String>((ref, brandId) {
+final _brandProvider = FutureProvider.family<Brand?, String>((ref, brandId) {
   return ref.watch(masterDaoProvider).getBrandById(brandId);
 });
 
@@ -136,8 +134,7 @@ class _ItemDetailBody extends ConsumerWidget {
     final inspectionsAsync = ref.watch(_inspectionsProvider(item.id));
     final repairsAsync = ref.watch(_repairsProvider(item.id));
 
-    final statusLabel =
-        statusLabels[item.currentStatus] ?? item.currentStatus;
+    final statusLabel = statusLabels[item.currentStatus] ?? item.currentStatus;
     final statusClr = statusColor(item.currentStatus);
 
     return CustomScrollView(
@@ -298,15 +295,15 @@ class _ItemDetailBody extends ConsumerWidget {
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     tooltip: '매입 수정',
                     onPressed: () async {
-                      final result = await context
-                          .push('/item/${item.id}/purchase?edit=${purchase.id}');
+                      final result = await context.push(
+                          '/item/${item.id}/purchase?edit=${purchase.id}');
                       if (result == true) ref.invalidate(_purchaseProvider);
                     },
                   ),
                   children: [
                     if (purchase.purchasePrice != null)
-                      _InfoRow('매입가',
-                          '${_numFmt.format(purchase.purchasePrice)}원'),
+                      _InfoRow(
+                          '매입가', '${_numFmt.format(purchase.purchasePrice)}원'),
                     _InfoRow('결제수단', _paymentLabel(purchase.paymentMethod)),
                     if (purchase.sourceId != null)
                       _SourceRow(sourceId: purchase.sourceId!),
@@ -487,8 +484,7 @@ class _ItemDetailBody extends ConsumerWidget {
                       if (ir.reason != null) _InfoRow('사유', ir.reason!),
                       if (ir.defectType != null) _InfoRow('유형', ir.defectType!),
                       if (ir.discountAmount != null)
-                        _InfoRow(
-                            '할인', '${_numFmt.format(ir.discountAmount)}원'),
+                        _InfoRow('할인', '${_numFmt.format(ir.discountAmount)}원'),
                       if (ir.memo != null) _InfoRow('메모', ir.memo!),
                       if (inspections.last != ir) const Divider(height: 12),
                     ],
@@ -556,9 +552,8 @@ class _ItemDetailBody extends ConsumerWidget {
                                   fontSize: 12,
                                 ),
                               ),
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 4),
                                 child: Icon(Icons.arrow_forward,
                                     size: 12, color: AppColors.textTertiary),
                               ),

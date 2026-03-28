@@ -99,8 +99,7 @@ class LlmRouter {
 
   /// API 키 저장
   Future<void> setApiKey(LlmProvider provider, String apiKey) async {
-    await _storage.write(
-        key: _providers[provider]!.storageKey, value: apiKey);
+    await _storage.write(key: _providers[provider]!.storageKey, value: apiKey);
   }
 
   /// API 키 조회
@@ -130,7 +129,7 @@ class LlmRouter {
       Uint8List imageBytes) async {
     final providers = await getAvailableProviders();
     if (providers.isEmpty) {
-      throw LlmException('설정된 LLM API 키가 없습니다. 설정에서 API 키를 등록하세요.');
+      throw const LlmException('설정된 LLM API 키가 없습니다. 설정에서 API 키를 등록하세요.');
     }
 
     for (final provider in providers) {
@@ -140,14 +139,14 @@ class LlmRouter {
         _logger.i('LLM 상품 인식 성공: ${_providers[provider]!.name}');
         return result;
       } catch (e) {
-        _logger.w(
-            'LLM ${_providers[provider]!.name} 실패, 다음 프로바이더로 폴백', error: e);
+        _logger.w('LLM ${_providers[provider]!.name} 실패, 다음 프로바이더로 폴백',
+            error: e);
         if (provider == providers.last) {
           throw LlmException('모든 LLM 프로바이더 호출 실패: $e');
         }
       }
     }
-    throw LlmException('사용 가능한 LLM 프로바이더가 없습니다');
+    throw const LlmException('사용 가능한 LLM 프로바이더가 없습니다');
   }
 
   // ── 프로바이더별 호출 ──
@@ -201,17 +200,13 @@ class LlmRouter {
       },
     );
 
-    final text =
-        response.data['content'][0]['text'] as String? ?? '';
+    final text = response.data['content'][0]['text'] as String? ?? '';
     return _parseResponse(text, config.name);
   }
 
   /// OpenAI-compatible API (Grok, DeepSeek)
-  Future<ProductRecognitionResult> _callOpenAICompatible(
-      _ProviderConfig config,
-      String apiKey,
-      String base64Image,
-      LlmProvider provider) async {
+  Future<ProductRecognitionResult> _callOpenAICompatible(_ProviderConfig config,
+      String apiKey, String base64Image, LlmProvider provider) async {
     final response = await _dio.post(
       config.baseUrl,
       options: Options(headers: {
@@ -238,8 +233,8 @@ class LlmRouter {
       },
     );
 
-    final text = response
-        .data['choices'][0]['message']['content'] as String? ?? '';
+    final text =
+        response.data['choices'][0]['message']['content'] as String? ?? '';
     return _parseResponse(text, config.name);
   }
 
@@ -265,7 +260,10 @@ class LlmRouter {
   // ── 모델코드 정규화: 공백→하이픈, 연속 하이픈 제거 ──
   String? _normalizeModelCode(String? code) {
     if (code == null || code.isEmpty) return code;
-    return code.trim().replaceAll(RegExp(r'\s+'), '-').replaceAll(RegExp(r'-{2,}'), '-');
+    return code
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '-')
+        .replaceAll(RegExp(r'-{2,}'), '-');
   }
 
   // ── 응답 파싱 ──
@@ -273,8 +271,7 @@ class LlmRouter {
   ProductRecognitionResult _parseResponse(String raw, String providerName) {
     // JSON 추출 (코드블록 감싸져 있을 수 있음)
     var jsonStr = raw.trim();
-    final jsonMatch =
-        RegExp(r'\{[\s\S]*\}').firstMatch(jsonStr);
+    final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(jsonStr);
     if (jsonMatch != null) {
       jsonStr = jsonMatch.group(0)!;
     }

@@ -23,6 +23,9 @@ final _allSourcesProvider = FutureProvider<List<Source>>((ref) {
   return ref.watch(masterDaoProvider).getAllSources();
 });
 
+/// 최근 선택한 브랜드 ID 목록 (최대 5개, 앱 세션 내 유지)
+final _recentBrandIdsProvider = StateProvider<List<String>>((ref) => []);
+
 /// 사이즈-수량 행
 class _SizeEntry {
   final sizeKrController = TextEditingController();
@@ -194,9 +197,8 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
   Future<void> _loadSizeCharts(String brandName) async {
     if (brandName == _lastSizeChartBrand && _sizeCharts.isNotEmpty) return;
     _lastSizeChartBrand = brandName;
-    final charts = await ref
-        .read(masterDaoProvider)
-        .getSizeChartsByBrand(brandName);
+    final charts =
+        await ref.read(masterDaoProvider).getSizeChartsByBrand(brandName);
     setState(() => _sizeCharts = charts);
   }
 
@@ -296,8 +298,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     }
   }
 
-  int get _totalItemCount =>
-      _sizeEntries.fold<int>(0, (sum, e) => sum + e.qty);
+  int get _totalItemCount => _sizeEntries.fold<int>(0, (sum, e) => sum + e.qty);
 
   // ── 날짜 ──
 
@@ -331,6 +332,32 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     }
     final seqNum = (existingCount + seq).toString().padLeft(3, '0');
     return '$base-$seqNum';
+  }
+
+  // ── 브랜드 선택 ──
+
+  void _onBrandSelected(Brand brand) {
+    setState(() => _selectedBrandId = brand.id);
+    _loadSizeCharts(brand.name);
+    // 최근 브랜드 업데이트 (최대 5개, 중복 제거 후 맨 앞 삽입)
+    final recent = [...ref.read(_recentBrandIdsProvider)];
+    recent.remove(brand.id);
+    recent.insert(0, brand.id);
+    if (recent.length > 5) recent.removeLast();
+    ref.read(_recentBrandIdsProvider.notifier).state = recent;
+  }
+
+  Future<void> _openBrandPicker(List<Brand> brands) async {
+    final selected = await showModalBottomSheet<Brand>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _BrandPickerSheet(
+        brands: brands,
+        recentBrandIds: ref.read(_recentBrandIdsProvider),
+        selectedBrandId: _selectedBrandId,
+      ),
+    );
+    if (selected != null) _onBrandSelected(selected);
   }
 
   // ── 매입처 추가 다이얼로그 ──
@@ -381,7 +408,8 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                     id: Value(id),
                     name: Value(nameCtrl.text.trim()),
                     type: Value(sourceType),
-                    url: Value(urlCtrl.text.isNotEmpty ? urlCtrl.text.trim() : null),
+                    url: Value(
+                        urlCtrl.text.isNotEmpty ? urlCtrl.text.trim() : null),
                     createdAt: Value(DateTime.now().toIso8601String()),
                   ));
               if (ctx.mounted) Navigator.pop(ctx, true);
@@ -434,19 +462,28 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
       String modelCode;
 
       if (_isNewProduct) {
-        productId = _uuid.v4();
         modelCode = _modelCodeController.text.trim();
-        final productEntry = ProductsCompanion(
-          id: Value(productId),
-          brandId: Value(_selectedBrandId),
-          modelCode: Value(modelCode),
-          modelName: Value(_modelNameController.text.trim()),
-          category: Value(_categoryController.text.isNotEmpty
-              ? _categoryController.text.trim()
-              : null),
-          createdAt: Value(now),
-        );
-        await ref.read(masterDaoProvider).upsertProduct(productEntry);
+
+        // 동일 model_code 상품이 이미 존재하면 해당 id 재사용
+        // (새 uuid로 INSERT하면 model_code UNIQUE 제약 위반 발생)
+        final existing =
+            await ref.read(masterDaoProvider).getProductByModelCode(modelCode);
+        if (existing != null) {
+          productId = existing.id;
+        } else {
+          productId = _uuid.v4();
+          final productEntry = ProductsCompanion(
+            id: Value(productId),
+            brandId: Value(_selectedBrandId),
+            modelCode: Value(modelCode),
+            modelName: Value(_modelNameController.text.trim()),
+            category: Value(_categoryController.text.isNotEmpty
+                ? _categoryController.text.trim()
+                : null),
+            createdAt: Value(now),
+          );
+          await ref.read(masterDaoProvider).upsertProduct(productEntry);
+        }
       } else {
         productId = _selectedProduct!.id;
         modelCode = _selectedProduct!.modelCode;
@@ -462,8 +499,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
           final itemId = _uuid.v4();
           final purchaseId = _uuid.v4();
 
-          final sku = await _generateSku(
-              modelCode, sizeEntry.sizeKr, q + 1);
+          final sku = await _generateSku(modelCode, sizeEntry.sizeKr, q + 1);
 
           await ref.read(itemDaoProvider).insertItem(ItemsCompanion(
                 id: Value(itemId),
@@ -653,8 +689,8 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
 
   Widget _sectionTitle(ThemeData theme, String text) {
     return Text(text,
-        style: theme.textTheme.titleSmall
-            ?.copyWith(fontWeight: FontWeight.bold));
+        style:
+            theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold));
   }
 
   // ── 기존 상품 검색 ──
@@ -679,10 +715,9 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                     : null,
               ),
               onChanged: (v) => _filterProducts(v, allProducts),
-              validator: (_) =>
-                  _selectedProduct == null && !_isNewProduct
-                      ? '상품을 선택하세요'
-                      : null,
+              validator: (_) => _selectedProduct == null && !_isNewProduct
+                  ? '상품을 선택하세요'
+                  : null,
             ),
             if (_showProductDropdown)
               Container(
@@ -711,10 +746,10 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                               ),
                             )
                           : const Icon(Icons.inventory_2, size: 24),
-                      title:
-                          Text(p.modelName, style: const TextStyle(fontSize: 13)),
-                      subtitle:
-                          Text(p.modelCode, style: const TextStyle(fontSize: 11)),
+                      title: Text(p.modelName,
+                          style: const TextStyle(fontSize: 13)),
+                      subtitle: Text(p.modelCode,
+                          style: const TextStyle(fontSize: 11)),
                       onTap: () => _selectProduct(p),
                     );
                   },
@@ -778,40 +813,78 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 브랜드 선택
+        // 브랜드 선택 (검색 + 최근 선택 핀)
         brandsAsync.when(
           data: (brands) {
-            // value가 items에 없으면 null로 폴백
-            final validBrandId = brands.any((b) => b.id == _selectedBrandId)
-                ? _selectedBrandId
-                : null;
-            return DropdownButtonFormField<String?>(
-              value: validBrandId,
-              decoration: const InputDecoration(
-                labelText: '브랜드',
-                prefixIcon: Icon(Icons.label_important),
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('선택 안함')),
-                ...brands.map((b) => DropdownMenuItem(
-                      value: b.id,
-                      child: Text(b.name),
-                    )),
+            final recentIds = ref.watch(_recentBrandIdsProvider);
+            final recentBrands = recentIds
+                .map((id) => brands.cast<Brand?>()
+                    .firstWhere((b) => b?.id == id, orElse: () => null))
+                .whereType<Brand>()
+                .toList();
+
+            final selectedBrand = brands.cast<Brand?>()
+                .firstWhere((b) => b?.id == _selectedBrandId,
+                    orElse: () => null);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 최근 선택 브랜드 빠른 선택 칩
+                if (recentBrands.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Icon(Icons.history,
+                          size: 13, color: Colors.grey.shade500),
+                      const SizedBox(width: 4),
+                      Text('최근 브랜드',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade500)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: recentBrands.map((brand) {
+                        final isSelected = brand.id == _selectedBrandId;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            label: Text(brand.name,
+                                style: const TextStyle(fontSize: 13)),
+                            selected: isSelected,
+                            onSelected: (_) => _onBrandSelected(brand),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                // 브랜드 선택 필드 (탭 → 검색 시트)
+                InkWell(
+                  onTap: () => _openBrandPicker(brands),
+                  borderRadius: BorderRadius.circular(4),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: '브랜드',
+                      prefixIcon: Icon(Icons.label_important),
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.arrow_drop_down),
+                    ),
+                    child: Text(
+                      selectedBrand?.name ?? '선택 안함',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: selectedBrand != null
+                            ? null
+                            : Colors.grey.shade500,
+                      ),
+                    ),
+                  ),
+                ),
               ],
-              onChanged: (v) {
-                setState(() => _selectedBrandId = v);
-                // 브랜드 변경 시 사이즈차트 로드
-                if (v != null) {
-                  final brand = brands.firstWhere((b) => b.id == v);
-                  _loadSizeCharts(brand.name);
-                } else {
-                  setState(() {
-                    _sizeCharts = [];
-                    _lastSizeChartBrand = null;
-                  });
-                }
-              },
             );
           },
           loading: () => const LinearProgressIndicator(),
@@ -828,10 +901,9 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
             border: OutlineInputBorder(),
             hintText: '예: DZ5485-612',
           ),
-          validator: (v) =>
-              _isNewProduct && (v == null || v.trim().isEmpty)
-                  ? '모델코드를 입력하세요'
-                  : null,
+          validator: (v) => _isNewProduct && (v == null || v.trim().isEmpty)
+              ? '모델코드를 입력하세요'
+              : null,
         ),
         const SizedBox(height: 12),
 
@@ -844,10 +916,9 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
             border: OutlineInputBorder(),
             hintText: '예: Nike Dunk Low Retro',
           ),
-          validator: (v) =>
-              _isNewProduct && (v == null || v.trim().isEmpty)
-                  ? '모델명을 입력하세요'
-                  : null,
+          validator: (v) => _isNewProduct && (v == null || v.trim().isEmpty)
+              ? '모델명을 입력하세요'
+              : null,
         ),
         const SizedBox(height: 12),
 
@@ -904,16 +975,15 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                       ? IconButton(
                           icon: const Icon(Icons.list_alt, size: 18),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                              minWidth: 32, minHeight: 32),
+                          constraints:
+                              const BoxConstraints(minWidth: 32, minHeight: 32),
                           tooltip: '사이즈 선택',
                           onPressed: () => _openSizePicker(entry),
                         )
                       : null,
                 ),
                 onChanged: (_) => _autoFillEuSize(entry),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '필수' : null,
+                validator: (v) => (v == null || v.trim().isEmpty) ? '필수' : null,
               ),
             ),
             const SizedBox(width: 8),
@@ -941,9 +1011,8 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
               children: [
                 _StepperButton(
                   icon: Icons.remove,
-                  onTap: entry.qty > 1
-                      ? () => setState(() => entry.qty--)
-                      : null,
+                  onTap:
+                      entry.qty > 1 ? () => setState(() => entry.qty--) : null,
                 ),
                 Container(
                   width: 32,
@@ -1001,7 +1070,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
 
         // 결제수단
         DropdownButtonFormField<String>(
-          value: _paymentMethod,
+          initialValue: _paymentMethod,
           decoration: const InputDecoration(
             labelText: '결제수단',
             prefixIcon: Icon(Icons.credit_card),
@@ -1038,7 +1107,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 DropdownButtonFormField<String?>(
-                  value: validSourceId,
+                  initialValue: validSourceId,
                   decoration: InputDecoration(
                     labelText:
                         '매입처 (${filterType == 'online' ? '온라인' : '오프라인'})',
@@ -1046,8 +1115,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                     border: const OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem(
-                        value: null, child: Text('선택 안함')),
+                    const DropdownMenuItem(value: null, child: Text('선택 안함')),
                     ...filtered.map((s) => DropdownMenuItem(
                           value: s.id,
                           child: Text(s.name),
@@ -1124,8 +1192,8 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                   Expanded(
                     child: Text(
                       '법인카드 결제 시 부가세 환급액이 자동 계산됩니다.',
-                      style: TextStyle(
-                          color: Colors.blue.shade700, fontSize: 13),
+                      style:
+                          TextStyle(color: Colors.blue.shade700, fontSize: 13),
                     ),
                   ),
                 ],
@@ -1148,12 +1216,192 @@ class _PriceInputFormatter extends TextInputFormatter {
       TextEditingValue oldValue, TextEditingValue newValue) {
     final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.isEmpty) {
-      return newValue.copyWith(text: '', selection: const TextSelection.collapsed(offset: 0));
+      return newValue.copyWith(
+          text: '', selection: const TextSelection.collapsed(offset: 0));
     }
     final formatted = NumberFormat('#,###').format(int.parse(digits));
     return TextEditingValue(
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
+
+// ══════════════════════════════════════
+// 브랜드 검색 피커 시트
+// ══════════════════════════════════════
+
+class _BrandPickerSheet extends StatefulWidget {
+  final List<Brand> brands;
+  final List<String> recentBrandIds;
+  final String? selectedBrandId;
+
+  const _BrandPickerSheet({
+    required this.brands,
+    required this.recentBrandIds,
+    this.selectedBrandId,
+  });
+
+  @override
+  State<_BrandPickerSheet> createState() => _BrandPickerSheetState();
+}
+
+class _BrandPickerSheetState extends State<_BrandPickerSheet> {
+  final _searchCtrl = TextEditingController();
+  late List<Brand> _filtered;
+
+  @override
+  void initState() {
+    super.initState();
+    _filtered = widget.brands;
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _filter(String query) {
+    final lower = query.toLowerCase();
+    setState(() {
+      _filtered = query.isEmpty
+          ? widget.brands
+          : widget.brands
+              .where((b) => b.name.toLowerCase().contains(lower))
+              .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final recentBrands = widget.recentBrandIds
+        .map((id) => widget.brands.cast<Brand?>()
+            .firstWhere((b) => b?.id == id, orElse: () => null))
+        .whereType<Brand>()
+        .toList();
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Column(
+          children: [
+            // 드래그 핸들
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // 타이틀 + 선택 안함
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 8),
+              child: Row(
+                children: [
+                  const Text('브랜드 선택',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('선택 안함'),
+                  ),
+                ],
+              ),
+            ),
+            // 검색창
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: '브랜드 이름으로 검색',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  isDense: true,
+                  suffixIcon: _searchCtrl.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            _filter('');
+                          },
+                        )
+                      : null,
+                ),
+                onChanged: _filter,
+              ),
+            ),
+            // 최근 선택 핀 행
+            if (recentBrands.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.history, size: 13, color: Colors.grey.shade500),
+                    const SizedBox(width: 4),
+                    Text('최근 선택',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: Row(
+                  children: recentBrands.map((brand) {
+                    final isSelected = brand.id == widget.selectedBrandId;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: Text(brand.name,
+                            style: const TextStyle(fontSize: 13)),
+                        selected: isSelected,
+                        onSelected: (_) => Navigator.pop(context, brand),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const Divider(height: 1),
+            ],
+            // 전체 브랜드 목록
+            Expanded(
+              child: _filtered.isEmpty
+                  ? Center(
+                      child: Text('검색 결과가 없습니다',
+                          style: TextStyle(color: Colors.grey.shade500)))
+                  : ListView.builder(
+                      controller: scrollController,
+                      itemCount: _filtered.length,
+                      itemBuilder: (_, i) {
+                        final brand = _filtered[i];
+                        final isSelected =
+                            brand.id == widget.selectedBrandId;
+                        return ListTile(
+                          title: Text(brand.name),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_circle,
+                                  color: Colors.green, size: 20)
+                              : null,
+                          selected: isSelected,
+                          onTap: () => Navigator.pop(context, brand),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

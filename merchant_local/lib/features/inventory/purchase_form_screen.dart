@@ -96,16 +96,14 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
     setState(() => _saving = true);
 
     try {
-      final price =
-          int.tryParse(_priceController.text.replaceAll(',', ''));
+      final price = int.tryParse(_priceController.text.replaceAll(',', ''));
       final entry = PurchasesCompanion(
         id: Value(widget.purchaseId ?? const Uuid().v4()),
         itemId: Value(widget.itemId),
         purchasePrice: Value(price),
         paymentMethod: Value(_paymentMethod),
-        purchaseDate: Value(_dateController.text.isNotEmpty
-            ? _dateController.text
-            : null),
+        purchaseDate: Value(
+            _dateController.text.isNotEmpty ? _dateController.text : null),
         sourceId: Value(_sourceId),
         memo: Value(
             _memoController.text.isNotEmpty ? _memoController.text : null),
@@ -167,17 +165,15 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
 
             // 결제수단
             DropdownButtonFormField<String>(
-              value: _paymentMethod,
+              initialValue: _paymentMethod,
               decoration: const InputDecoration(
                 labelText: '결제수단',
                 prefixIcon: Icon(Icons.credit_card),
                 border: OutlineInputBorder(),
               ),
               items: const [
-                DropdownMenuItem(
-                    value: 'CORPORATE_CARD', child: Text('법인카드')),
-                DropdownMenuItem(
-                    value: 'PERSONAL_CARD', child: Text('개인카드')),
+                DropdownMenuItem(value: 'CORPORATE_CARD', child: Text('법인카드')),
+                DropdownMenuItem(value: 'PERSONAL_CARD', child: Text('개인카드')),
                 DropdownMenuItem(value: 'CASH', child: Text('현금')),
                 DropdownMenuItem(value: 'TRANSFER', child: Text('계좌이체')),
               ],
@@ -191,15 +187,14 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
                 final validSourceId =
                     sources.any((s) => s.id == _sourceId) ? _sourceId : null;
                 return DropdownButtonFormField<String?>(
-                  value: validSourceId,
+                  initialValue: validSourceId,
                   decoration: const InputDecoration(
                     labelText: '매입처',
                     prefixIcon: Icon(Icons.store),
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem(
-                        value: null, child: Text('선택 안함')),
+                    const DropdownMenuItem(value: null, child: Text('선택 안함')),
                     ...sources.map((s) => DropdownMenuItem(
                           value: s.id,
                           child: Text(s.name),

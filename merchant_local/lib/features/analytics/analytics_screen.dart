@@ -6,38 +6,64 @@ import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 
 final _wonFormat = NumberFormat('#,###');
+final _dateFmt = DateFormat('yyyy-MM-dd');
 
 // ── Providers ──
 
-final _yearFilterProvider = StateProvider<String?>((ref) => null);
+/// 선택된 날짜 범위 (from, to)
+final _analyticsFromProvider = StateProvider<String?>((ref) => null);
+final _analyticsToProvider = StateProvider<String?>((ref) => null);
+
+/// 현재 필터 표시 레이블 ('전체 기간', '2026년', '2025년', '기간 선택')
+final _analyticsLabelProvider = StateProvider<String>((ref) => '전체 기간');
 
 final _summaryProvider = FutureProvider<Map<String, num>>((ref) {
-  return ref.watch(saleDaoProvider).getSalesSummary();
+  final dateFrom = ref.watch(_analyticsFromProvider);
+  final dateTo = ref.watch(_analyticsToProvider);
+  return ref.watch(saleDaoProvider).getSalesSummary(
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      );
 });
 
-final _monthlyTrendProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) {
-  final year = ref.watch(_yearFilterProvider);
-  return ref.watch(saleDaoProvider).getMonthlyTrend(year: year);
+final _monthlyTrendProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
+  final dateFrom = ref.watch(_analyticsFromProvider);
+  final dateTo = ref.watch(_analyticsToProvider);
+  return ref.watch(saleDaoProvider).getMonthlyTrend(
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      );
 });
 
-final _platformDistProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) {
-  return ref.watch(saleDaoProvider).getPlatformDistribution();
+final _platformDistProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
+  final dateFrom = ref.watch(_analyticsFromProvider);
+  final dateTo = ref.watch(_analyticsToProvider);
+  return ref.watch(saleDaoProvider).getPlatformDistribution(
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      );
 });
 
-final _topProfitProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) {
-  return ref
-      .watch(saleDaoProvider)
-      .getTopModels(limit: 10, ascending: false);
+final _topProfitProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
+  final dateFrom = ref.watch(_analyticsFromProvider);
+  final dateTo = ref.watch(_analyticsToProvider);
+  return ref.watch(saleDaoProvider).getTopModels(
+        limit: 10,
+        ascending: false,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      );
 });
 
-final _topLossProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) {
-  return ref
-      .watch(saleDaoProvider)
-      .getTopModels(limit: 10, ascending: true);
+final _topLossProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
+  final dateFrom = ref.watch(_analyticsFromProvider);
+  final dateTo = ref.watch(_analyticsToProvider);
+  return ref.watch(saleDaoProvider).getTopModels(
+        limit: 10,
+        ascending: true,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      );
 });
 
 // ── Screen ──
@@ -48,37 +74,105 @@ class AnalyticsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(_summaryProvider);
-    final year = ref.watch(_yearFilterProvider);
-    final now = DateTime.now().year.toString();
+    final label = ref.watch(_analyticsLabelProvider);
+    final now = DateTime.now();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('분석'),
         actions: [
-          // 연도 필터
-          PopupMenuButton<String?>(
-            icon: const Icon(Icons.calendar_today, size: 20),
+          // 필터 버튼
+          PopupMenuButton<String>(
+            icon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.calendar_today, size: 16),
+                const SizedBox(width: 4),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600)),
+                const Icon(Icons.arrow_drop_down, size: 16),
+              ],
+            ),
             tooltip: '기간 필터',
-            onSelected: (v) =>
-                ref.read(_yearFilterProvider.notifier).state = v,
+            onSelected: (v) async {
+              if (v == 'all') {
+                ref.read(_analyticsFromProvider.notifier).state = null;
+                ref.read(_analyticsToProvider.notifier).state = null;
+                ref.read(_analyticsLabelProvider.notifier).state = '전체 기간';
+              } else if (v == 'custom') {
+                final range = await showDateRangePicker(
+                  context: context,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2030),
+                  initialDateRange: DateTimeRange(
+                    start: DateTime(now.year, 1, 1),
+                    end: now,
+                  ),
+                  locale: const Locale('ko'),
+                );
+                if (range != null) {
+                  ref.read(_analyticsFromProvider.notifier).state =
+                      _dateFmt.format(range.start);
+                  ref.read(_analyticsToProvider.notifier).state =
+                      _dateFmt.format(range.end);
+                  ref.read(_analyticsLabelProvider.notifier).state =
+                      '${_dateFmt.format(range.start)} ~ ${_dateFmt.format(range.end)}';
+                }
+              } else {
+                // year selected
+                final year = int.parse(v);
+                final isCurrentYear = year == now.year;
+                final from = '$year-01-01';
+                final to = isCurrentYear ? _dateFmt.format(now) : '$year-12-31';
+                ref.read(_analyticsFromProvider.notifier).state = from;
+                ref.read(_analyticsToProvider.notifier).state = to;
+                ref.read(_analyticsLabelProvider.notifier).state = '$year년';
+              }
+            },
             itemBuilder: (_) => [
               PopupMenuItem(
-                value: null,
+                value: 'all',
                 child: Text('전체 기간',
                     style: TextStyle(
-                        fontWeight:
-                            year == null ? FontWeight.bold : FontWeight.normal)),
+                        fontWeight: label == '전체 기간'
+                            ? FontWeight.bold
+                            : FontWeight.normal)),
               ),
               PopupMenuItem(
-                value: now,
-                child: Text('$now년',
+                value: now.year.toString(),
+                child: Text('${now.year}년  (1월 1일 ~ 오늘)',
                     style: TextStyle(
-                        fontWeight:
-                            year == now ? FontWeight.bold : FontWeight.normal)),
+                        fontWeight: label == '${now.year}년'
+                            ? FontWeight.bold
+                            : FontWeight.normal)),
               ),
               PopupMenuItem(
-                value: (int.parse(now) - 1).toString(),
-                child: Text('${int.parse(now) - 1}년'),
+                value: (now.year - 1).toString(),
+                child: Text('${now.year - 1}년  (전체)',
+                    style: TextStyle(
+                        fontWeight: label == '${now.year - 1}년'
+                            ? FontWeight.bold
+                            : FontWeight.normal)),
+              ),
+              PopupMenuItem(
+                value: (now.year - 2).toString(),
+                child: Text('${now.year - 2}년  (전체)',
+                    style: TextStyle(
+                        fontWeight: label == '${now.year - 2}년'
+                            ? FontWeight.bold
+                            : FontWeight.normal)),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'custom',
+                child: Row(
+                  children: [
+                    Icon(Icons.date_range, size: 16),
+                    SizedBox(width: 8),
+                    Text('기간 선택'),
+                  ],
+                ),
               ),
             ],
           ),
@@ -116,25 +210,25 @@ class AnalyticsScreen extends ConsumerWidget {
           const SizedBox(height: AppSpacing.lg),
 
           // ── 월별 트렌드 ──
-          _SectionTitle('월별 트렌드'),
+          const _SectionTitle('월별 트렌드'),
           const SizedBox(height: AppSpacing.sm),
           _MonthlyTrendChart(),
           const SizedBox(height: AppSpacing.lg),
 
           // ── 플랫폼 분포 ──
-          _SectionTitle('플랫폼 분포'),
+          const _SectionTitle('플랫폼 분포'),
           const SizedBox(height: AppSpacing.sm),
           _PlatformPieChart(),
           const SizedBox(height: AppSpacing.lg),
 
           // ── Top 10 수익 모델 ──
-          _SectionTitle('Top 10 수익 모델'),
+          const _SectionTitle('Top 10 수익 모델'),
           const SizedBox(height: AppSpacing.sm),
           _TopModelsList(provider: _topProfitProvider, isProfit: true),
           const SizedBox(height: AppSpacing.lg),
 
           // ── Top 10 손실 모델 ──
-          _SectionTitle('Top 10 손실 모델'),
+          const _SectionTitle('Top 10 손실 모델'),
           const SizedBox(height: AppSpacing.sm),
           _TopModelsList(provider: _topLossProvider, isProfit: false),
           const SizedBox(height: AppSpacing.xl),
@@ -220,7 +314,7 @@ class _MonthlyTrendChart extends ConsumerWidget {
                 show: true,
                 drawVerticalLine: false,
                 horizontalInterval: maxVal > 0 ? maxVal / 4 : 1,
-                getDrawingHorizontalLine: (_) => FlLine(
+                getDrawingHorizontalLine: (_) => const FlLine(
                   color: AppColors.border,
                   strokeWidth: 0.5,
                 ),
@@ -268,8 +362,7 @@ class _MonthlyTrendChart extends ConsumerWidget {
                   getTooltipItems: (spots) => spots
                       .map((s) => LineTooltipItem(
                             _wonFormat.format(s.y.toInt()),
-                            TextStyle(
-                                color: s.bar.color, fontSize: 11),
+                            TextStyle(color: s.bar.color, fontSize: 11),
                           ))
                       .toList(),
                 ),
@@ -315,8 +408,7 @@ class _PlatformPieChart extends ConsumerWidget {
     return async.when(
       data: (data) {
         if (data.isEmpty) return _emptyChart(context, '데이터 없음');
-        final total =
-            data.fold<int>(0, (s, d) => s + (d['totalSell'] as int));
+        final total = data.fold<int>(0, (s, d) => s + (d['totalSell'] as int));
 
         return Container(
           height: 200,
@@ -324,7 +416,6 @@ class _PlatformPieChart extends ConsumerWidget {
           decoration: _chartDecoration(context),
           child: Row(
             children: [
-              // 파이
               Expanded(
                 child: PieChart(
                   PieChartData(
@@ -337,8 +428,7 @@ class _PlatformPieChart extends ConsumerWidget {
                         value: val,
                         color: _colors[i % _colors.length],
                         radius: 40,
-                        title:
-                            '${(val / total * 100).toStringAsFixed(0)}%',
+                        title: '${(val / total * 100).toStringAsFixed(0)}%',
                         titleStyle: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -348,7 +438,6 @@ class _PlatformPieChart extends ConsumerWidget {
                   ),
                 ),
               ),
-              // 범례
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,

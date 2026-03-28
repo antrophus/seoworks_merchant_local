@@ -66,13 +66,27 @@ UI 구조, 시각 디자인, 컴포넌트, 레이아웃, 색상, 타이포그래
 ### 완료된 작업 (2026-03-24~25) — Phase 2-A + 2-B
 - [x] Phase 2-A: 대시보드 강화, 판매 내역 페이지, SizePicker 고도화, 검수 반려, 배치 구매
 - [x] Phase 2-B: 분석 대시보드(fl_chart), 하자/물류/구매 전용 페이지, 인벤토리 정렬 확장, 데이터 내보내기
-- **전체 이식률: 87% (121개 중 102개 완료)**
-- 상세: `merchant_local/docs/web-to-local-migration-plan.md` 섹션 5~6 참조
+
+### 완료된 작업 (2026-03-26) — 코드리뷰 기반 품질 개선
+- [x] Critical/High/Medium 이슈 14건 수정 (CSV Injection, FK cascade, 인덱스 14개, 지수 백오프, 상태 전이 검증 등)
+
+### 완료된 작업 (2026-03-28) — Sprint 3 + 성능 최적화 + 4개 페이지 리뉴얼
+- [x] Sprint 3: 인벤토리 그룹 뷰 `ListView.builder + GroupCard(ExpansionTile)` 재설계 (SliverPersistentHeader 크래시 수정)
+- [x] SQLite WAL 모드 + synchronous=NORMAL + cache_size 64MB pragma 설정
+- [x] N+1 → 배치 조회 (`getProductsByIds`), `Future.wait` 병렬 처리
+- [x] Dashboard FutureProvider 5개에 `ref.watch(itemsProvider)` 의존성 추가
+- [x] `didUpdateWidget` id:updatedAt 키 비교로 불필요한 재실행 방지
+- [x] 하자 관리 반려 이력 — 현재 상태 뱃지(`_StatusBadge`) 추가
+- [x] 분석 화면: 현재연도=1월1일~오늘 / 과거연도=전체, DateRangePicker 추가
+- [x] 물류 추적: 날짜+송장 그룹화, 그룹 헤더(갯수·판매가·정산가·이익률), 월별 요약 헤더
+- [x] 구매 내역: 날짜+구매처 그룹화, 상단 통계(구입수·구매액·반품수·반품액·판매수), 기간 필터
+- [x] 판매 내역 이번달/지난달 버그: `COALESCE(settled_at, sale_date)` 기준으로 수정
+- **전체 이식률: 92%**
 
 ### 다음 세션 작업
 - **Phase 2-C**: 캘린더 뷰, Google Drive 동기화, 기타 UI 개선
-- **잔여 이슈**: AI 스캔→사이즈 자동완성 버그, 하자/물류/구매 네비게이션 연결, 이미지 저장 로직 확인
-- 상세: `merchant_local/docs/web-to-local-migration-plan.md` 섹션 6 참조
+- **잔여 이슈**: INV-09 재고 위치별 탭 미구현(🔶), 이미지 저장 로직 확인
+- 상세: `merchant_local/docs/web-to-local-migration-plan.md` 참조
 
 ### 설치된 도구 (전역)
 

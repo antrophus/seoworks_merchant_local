@@ -227,13 +227,11 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       vars.add(Variable.withString(platform));
     }
     if (dateFrom != null) {
-      where += ' AND (s.sale_date >= ? OR s.created_at >= ?)';
-      vars.add(Variable.withString(dateFrom));
+      where += ' AND COALESCE(s.settled_at, s.sale_date) >= ?';
       vars.add(Variable.withString(dateFrom));
     }
     if (dateTo != null) {
-      where += ' AND (s.sale_date <= ? OR s.created_at <= ?)';
-      vars.add(Variable.withString(dateTo));
+      where += ' AND COALESCE(s.settled_at, s.sale_date) <= ?';
       vars.add(Variable.withString(dateTo));
     }
 
@@ -268,21 +266,25 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
   }
 
   /// 월별 트렌드 (판매액/정산액/이익)
-  Future<List<Map<String, dynamic>>> getMonthlyTrend({String? year}) async {
-    final whereYear = year != null
-        ? "AND (SUBSTR(s.sale_date, 1, 4) = ? OR SUBSTR(s.created_at, 1, 4) = ?)"
-        : '';
-    final vars = <Variable>[
-      if (year != null) ...[
-        Variable.withString(year),
-        Variable.withString(year),
-      ],
-    ];
+  Future<List<Map<String, dynamic>>> getMonthlyTrend({
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    var where = '';
+    final vars = <Variable>[];
+    if (dateFrom != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) >= ?";
+      vars.add(Variable.withString(dateFrom));
+    }
+    if (dateTo != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) <= ?";
+      vars.add(Variable.withString(dateTo));
+    }
 
     final results = await customSelect(
       '''
       SELECT
-        SUBSTR(COALESCE(s.sale_date, s.created_at), 1, 7) AS month,
+        SUBSTR(COALESCE(s.settled_at, s.sale_date), 1, 7) AS month,
         COALESCE(SUM(s.sell_price), 0) AS sell,
         COALESCE(SUM(s.settlement_amount), 0) AS settlement,
         COALESCE(SUM(s.settlement_amount - COALESCE(p.purchase_price, 0)), 0) AS profit
@@ -290,7 +292,8 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       JOIN items i ON i.id = s.item_id
       LEFT JOIN purchases p ON p.item_id = s.item_id
       WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
-      $whereYear
+        AND COALESCE(s.settled_at, s.sale_date) IS NOT NULL
+      $where
       GROUP BY month ORDER BY month
       ''',
       variables: vars,
@@ -306,7 +309,20 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
   }
 
   /// 플랫폼별 판매 분포
-  Future<List<Map<String, dynamic>>> getPlatformDistribution() async {
+  Future<List<Map<String, dynamic>>> getPlatformDistribution({
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    var where = '';
+    final vars = <Variable>[];
+    if (dateFrom != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) >= ?";
+      vars.add(Variable.withString(dateFrom));
+    }
+    if (dateTo != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) <= ?";
+      vars.add(Variable.withString(dateTo));
+    }
     final results = await customSelect(
       '''
       SELECT s.platform, COUNT(*) AS cnt,
@@ -314,8 +330,10 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       FROM sales s
       JOIN items i ON i.id = s.item_id
       WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
+      $where
       GROUP BY s.platform ORDER BY total_sell DESC
       ''',
+      variables: vars,
       readsFrom: {sales, items},
     ).get();
 
@@ -330,8 +348,22 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
   Future<List<Map<String, dynamic>>> getTopModels({
     required int limit,
     required bool ascending,
+    String? dateFrom,
+    String? dateTo,
   }) async {
     final order = ascending ? 'ASC' : 'DESC';
+    var where = '';
+    final vars = <Variable>[];
+    if (dateFrom != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) >= ?";
+      vars.add(Variable.withString(dateFrom));
+    }
+    if (dateTo != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) <= ?";
+      vars.add(Variable.withString(dateTo));
+    }
+    vars.add(Variable.withInt(limit));
+
     final results = await customSelect(
       '''
       SELECT pr.model_code, pr.model_name,
@@ -343,11 +375,12 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       LEFT JOIN purchases p ON p.item_id = s.item_id
       WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
         AND s.settlement_amount IS NOT NULL
+      $where
       GROUP BY pr.model_code, pr.model_name
       ORDER BY profit $order
       LIMIT ?
       ''',
-      variables: [Variable.withInt(limit)],
+      variables: vars,
       readsFrom: {sales, items},
     ).get();
 

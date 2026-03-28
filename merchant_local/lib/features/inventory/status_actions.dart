@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart' show Value;
@@ -166,7 +167,11 @@ Future<bool?> showStatusActionSheet({
     return null;
   }
 
-  return showModalBottomSheet<bool>(
+  // Completer: Navigator.pop으로 시트가 닫힌 후에도
+  // _executeAction 결과를 올바르게 반환하기 위해 사용
+  final completer = Completer<bool?>();
+
+  showModalBottomSheet<void>(
     context: context,
     builder: (ctx) {
       return SafeArea(
@@ -197,10 +202,7 @@ Future<bool?> showStatusActionSheet({
                       item: item,
                       action: action,
                     );
-                    if (result == true && context.mounted) {
-                      // 호출한 곳에서 새로고침하도록 true 반환
-                      // bottom sheet은 이미 닫혔으므로 별도 처리
-                    }
+                    if (!completer.isCompleted) completer.complete(result);
                   },
                 )),
             const SizedBox(height: 8),
@@ -208,7 +210,12 @@ Future<bool?> showStatusActionSheet({
         ),
       );
     },
-  );
+  ).then((_) {
+    // 액션 없이 시트가 닫힌 경우 (스와이프 다운 등)
+    if (!completer.isCompleted) completer.complete(null);
+  });
+
+  return completer.future;
 }
 
 // ══════════════════════════════════════════════════
