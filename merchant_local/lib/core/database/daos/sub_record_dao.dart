@@ -138,6 +138,64 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
     });
   }
 
+  /// 해당 아이템의 모든 배송 이력 날짜를 일괄 업데이트
+  Future<void> updateShipmentsOutgoingDate(
+      String itemId, String outgoingDate) async {
+    await (update(shipments)..where((t) => t.itemId.equals(itemId))).write(
+      ShipmentsCompanion(outgoingDate: Value(outgoingDate)),
+    );
+  }
+
+  /// 동일 운송장 번호의 모든 배송 이력 날짜를 일괄 업데이트
+  Future<void> updateShipmentsOutgoingDateByTracking(
+      String trackingNumber, String outgoingDate) async {
+    await (update(shipments)
+          ..where((t) => t.trackingNumber.equals(trackingNumber)))
+        .write(
+      ShipmentsCompanion(outgoingDate: Value(outgoingDate)),
+    );
+  }
+
+  /// 운송장 번호로 shipment 조회
+  Future<List<ShipmentData>> getShipmentsByTracking(
+      String trackingNumber) async {
+    return (select(shipments)
+          ..where((t) => t.trackingNumber.equals(trackingNumber)))
+        .get();
+  }
+
+  /// 중복 shipment 정리: 동일 item_id + tracking_number 조합에서
+  /// 최신(seq가 가장 큰) 레코드만 유지하고 나머지 삭제
+  Future<int> cleanupDuplicateShipments() async {
+    final result = await customSelect(
+      '''
+      SELECT id FROM shipments
+      WHERE id NOT IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY item_id, tracking_number
+            ORDER BY seq DESC
+          ) AS rn
+          FROM shipments
+        ) sub
+        WHERE rn = 1
+      )
+      ''',
+      readsFrom: {shipments},
+    ).get();
+
+    if (result.isEmpty) return 0;
+
+    final idsToDelete = result.map((r) => r.read<String>('id')).toList();
+    await (delete(shipments)..where((t) => t.id.isIn(idsToDelete))).go();
+    return idsToDelete.length;
+  }
+
+  /// 개별 shipment 삭제
+  Future<void> deleteShipment(String id) async {
+    await (delete(shipments)..where((t) => t.id.equals(id))).go();
+  }
+
   // ── SupplierReturns ──
   Future<void> insertSupplierReturn(SupplierReturnsCompanion entry) =>
       into(supplierReturns).insert(entry);

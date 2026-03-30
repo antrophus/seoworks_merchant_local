@@ -45,6 +45,8 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
     super.initState();
     if (!widget.isEditing) {
       _dateController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    } else {
+      _loadExisting();
     }
   }
 
@@ -131,10 +133,6 @@ class _PurchaseFormScreenState extends ConsumerState<PurchaseFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.isEditing && !_loaded) {
-      _loadExisting();
-    }
-
     final sourcesAsync = ref.watch(_sourcesProvider);
 
     return Scaffold(

@@ -23,11 +23,8 @@ final _purchaseProvider =
 });
 
 final _sourceProvider =
-    FutureProvider.family<Source?, String>((ref, sourceId) async {
-  final sources = await ref.watch(masterDaoProvider).getAllSources();
-  return sources
-      .cast<Source?>()
-      .firstWhere((s) => s!.id == sourceId, orElse: () => null);
+    FutureProvider.family<Source?, String>((ref, sourceId) {
+  return ref.watch(masterDaoProvider).getSourceById(sourceId);
 });
 
 final _saleProvider = FutureProvider.family<SaleData?, String>((ref, itemId) {
@@ -184,14 +181,33 @@ class _ItemDetailBody extends ConsumerWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 모델코드만 표시
-                    Text(
-                      product.modelCode,
-                      style: AppTheme.dataStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
+                    // 모델코드 + 수정 버튼
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            product.modelCode,
+                            style: AppTheme.dataStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 20),
+                          tooltip: '상품 정보 수정',
+                          onPressed: () async {
+                            final result = await context.push(
+                              '/item/${item.id}/edit?productId=${product.id}',
+                            );
+                            if (result == true) {
+                              ref.invalidate(_productProvider);
+                            }
+                          },
+                        ),
+                      ],
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     // 브랜드 · 카테고리 · 사이즈
@@ -454,9 +470,39 @@ class _ItemDetailBody extends ConsumerWidget {
                   color: AppColors.statusOutgoing,
                   children: [
                     for (final s in shipments)
-                      _InfoRow(
-                        '#${s.seq} ${s.platform ?? ''}',
-                        '${s.trackingNumber}${s.outgoingDate != null ? ' · ${s.outgoingDate}' : ''}',
+                      GestureDetector(
+                        onLongPress: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('배송 이력 삭제'),
+                              content: Text(
+                                  '#${s.seq} ${s.trackingNumber}\n이 배송 이력을 삭제하시겠습니까?'),
+                              actions: [
+                                TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(ctx, false),
+                                    child: const Text('취소')),
+                                FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(ctx, true),
+                                    style: FilledButton.styleFrom(
+                                        backgroundColor: AppColors.error),
+                                    child: const Text('삭제')),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) {
+                            await ref
+                                .read(subRecordDaoProvider)
+                                .deleteShipment(s.id);
+                            ref.invalidate(_shipmentsProvider);
+                          }
+                        },
+                        child: _InfoRow(
+                          '#${s.seq} ${s.platform ?? ''}',
+                          '${s.trackingNumber}${s.outgoingDate != null ? ' · ${s.outgoingDate}' : ''}',
+                        ),
                       ),
                   ],
                 );

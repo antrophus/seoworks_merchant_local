@@ -83,6 +83,14 @@ UI 구조, 시각 디자인, 컴포넌트, 레이아웃, 색상, 타이포그래
 - [x] 판매 내역 이번달/지난달 버그: `COALESCE(settled_at, sale_date)` 기준으로 수정
 - **전체 이식률: 92%**
 
+### 완료된 작업 (2026-03-29) — 버그 수정 + 브랜드 선택 UI
+- [x] 구매 내역: 반품/반품액 0 버그 (`EXISTS` 서브쿼리 + 상태 조건 추가)
+- [x] 구매 내역: 구매처 수정 후 미반영 (`ref.watch(itemsProvider)` 추가)
+- [x] 상태 변경 후 상세 페이지 미갱신 → `_itemProvider` StreamProvider 전환 + `watchById` 추가
+- [x] SETTLED→SETTLED 에러 → `showStatusActionSheet` Completer 적용
+- [x] 입고 등록: model_code UNIQUE 제약 에러 → 저장 전 중복 체크
+- [x] 브랜드 선택: 검색 시트 + 최근 선택 칩 핀 기능 추가
+
 ### 다음 세션 작업
 - **Phase 2-C**: 캘린더 뷰, Google Drive 동기화, 기타 UI 개선
 - **잔여 이슈**: INV-09 재고 위치별 탭 미구현(🔶), 이미지 저장 로직 확인

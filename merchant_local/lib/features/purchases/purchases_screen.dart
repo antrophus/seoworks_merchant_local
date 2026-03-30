@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -51,8 +52,14 @@ class _PurchaseGroup {
     required this.items,
   });
 
-  int get totalPrice =>
-      items.fold(0, (s, i) => s + (i.purchasePrice ?? 0));
+  int get returnCount => items.where((i) => i.hasReturn).length;
+  int get returnAmount => items
+      .where((i) => i.hasReturn)
+      .fold(0, (s, i) => s + (i.purchasePrice ?? 0));
+  // 반품 제외 실구매액
+  int get totalPrice => items
+      .where((i) => !i.hasReturn)
+      .fold(0, (s, i) => s + (i.purchasePrice ?? 0));
 }
 
 // ══════════════════════════════════════════════════
@@ -63,22 +70,26 @@ final _purchaseDateFromProvider = StateProvider<String?>((ref) => null);
 final _purchaseDateToProvider = StateProvider<String?>((ref) => null);
 final _purchaseLabelProvider = StateProvider<String>((ref) => '전체');
 
-final _purchasesProvider =
-    FutureProvider<List<_PurchaseGroup>>((ref) async {
+// StreamProvider: customSelect.watch()가 readsFrom 테이블(purchases 포함) 변경 시
+// 자동으로 emit → 구입가격/구매처 수정이 즉시 화면에 반영됨
+// FutureProvider + ref.watch(itemsProvider) 방식은 purchases 테이블 변경을 감지 불가
+final _purchasesProvider = StreamProvider<List<_PurchaseGroup>>((ref) {
   final db = ref.watch(databaseProvider);
-  ref.watch(itemsProvider); // 아이템/구매처 변경 시 자동 갱신
   final dateFrom = ref.watch(_purchaseDateFromProvider);
   final dateTo = ref.watch(_purchaseDateToProvider);
 
   var where = '';
+  final vars = <Variable>[];
   if (dateFrom != null) {
-    where += " AND COALESCE(p.purchase_date, p.created_at) >= '${dateFrom.replaceAll("'", "''")}'";
+    where += ' AND COALESCE(p.purchase_date, p.created_at) >= ?';
+    vars.add(Variable.withString(dateFrom));
   }
   if (dateTo != null) {
-    where += " AND COALESCE(p.purchase_date, p.created_at) <= '${dateTo.replaceAll("'", "''")}'";
+    where += ' AND COALESCE(p.purchase_date, p.created_at) <= ?';
+    vars.add(Variable.withString(dateTo));
   }
 
-  final results = await db.customSelect(
+  return db.customSelect(
     '''
     SELECT
       p.id,
@@ -105,6 +116,7 @@ final _purchasesProvider =
     $where
     ORDER BY COALESCE(p.purchase_date, p.created_at) DESC
     ''',
+    variables: vars,
     readsFrom: {
       db.purchases,
       db.items,
@@ -112,57 +124,99 @@ final _purchasesProvider =
       db.sources,
       db.supplierReturns,
     },
-  ).get();
+  ).watch().map((results) {
+    // 날짜+구매처로 그룹화
+    final groupMap = <String, _PurchaseGroup>{};
+    for (final r in results) {
+      final date = r.readNullable<String>('purchase_date') ?? '날짜미상';
+      final source = r.read<String>('source_name');
+      final key = '$date|$source';
 
-  // 날짜+구매처로 그룹화
-  final groupMap = <String, _PurchaseGroup>{};
-  for (final r in results) {
-    final date = r.readNullable<String>('purchase_date') ?? '날짜미상';
-    final source = r.read<String>('source_name');
-    final key = '$date|$source';
-
-    final item = _PurchaseItem(
-      itemId: r.read<String>('item_id'),
-      sku: r.read<String>('sku'),
-      sizeKr: r.read<String>('size_kr'),
-      modelName: r.read<String>('model_name'),
-      modelCode: r.read<String>('model_code'),
-      currentStatus: r.read<String>('current_status'),
-      purchasePrice: r.readNullable<int>('purchase_price'),
-      purchaseDate: r.readNullable<String>('purchase_date'),
-      paymentMethod: r.read<String>('payment_method'),
-      hasReturn: r.read<int>('has_return') == 1,
-      isSold: r.read<int>('is_sold') == 1,
-    );
-
-    if (groupMap.containsKey(key)) {
-      final existing = groupMap[key]!;
-      groupMap[key] = _PurchaseGroup(
-        date: existing.date,
-        sourceName: existing.sourceName,
-        items: [...existing.items, item],
+      final item = _PurchaseItem(
+        itemId: r.read<String>('item_id'),
+        sku: r.read<String>('sku'),
+        sizeKr: r.read<String>('size_kr'),
+        modelName: r.read<String>('model_name'),
+        modelCode: r.read<String>('model_code'),
+        currentStatus: r.read<String>('current_status'),
+        purchasePrice: r.readNullable<int>('purchase_price'),
+        purchaseDate: r.readNullable<String>('purchase_date'),
+        paymentMethod: r.read<String>('payment_method'),
+        hasReturn: r.read<int>('has_return') == 1,
+        isSold: r.read<int>('is_sold') == 1,
       );
-    } else {
-      groupMap[key] = _PurchaseGroup(
-        date: date,
-        sourceName: source,
-        items: [item],
-      );
+
+      if (groupMap.containsKey(key)) {
+        final existing = groupMap[key]!;
+        groupMap[key] = _PurchaseGroup(
+          date: existing.date,
+          sourceName: existing.sourceName,
+          items: [...existing.items, item],
+        );
+      } else {
+        groupMap[key] = _PurchaseGroup(
+          date: date,
+          sourceName: source,
+          items: [item],
+        );
+      }
     }
-  }
-
-  return groupMap.values.toList();
+    return groupMap.values.toList();
+  });
 });
 
 // ══════════════════════════════════════════════════
 // Screen
 // ══════════════════════════════════════════════════
 
-class PurchasesScreen extends ConsumerWidget {
+class PurchasesScreen extends ConsumerStatefulWidget {
   const PurchasesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PurchasesScreen> createState() => _PurchasesScreenState();
+}
+
+class _PurchasesScreenState extends ConsumerState<PurchasesScreen> {
+  final Set<String> _expandedGroups = {};
+
+  String _key(_PurchaseGroup g) => '${g.date}|${g.sourceName}';
+  bool _isExpanded(_PurchaseGroup g) => _expandedGroups.contains(_key(g));
+  void _toggle(_PurchaseGroup g) {
+    setState(() {
+      final k = _key(g);
+      if (_expandedGroups.contains(k)) {
+        _expandedGroups.remove(k);
+      } else {
+        _expandedGroups.add(k);
+      }
+    });
+  }
+
+  Map<String, int> _calcStats(List<_PurchaseItem> items) {
+    int purchaseCount = 0, purchaseAmount = 0;
+    int returnCount = 0, returnAmount = 0;
+    int saleCount = 0;
+    for (final i in items) {
+      purchaseCount++;
+      if (i.hasReturn) {
+        returnCount++;
+        returnAmount += i.purchasePrice ?? 0;
+      } else {
+        purchaseAmount += i.purchasePrice ?? 0;
+      }
+      if (i.isSold) saleCount++;
+    }
+    return {
+      'purchaseCount': purchaseCount,
+      'purchaseAmount': purchaseAmount,
+      'returnCount': returnCount,
+      'returnAmount': returnAmount,
+      'saleCount': saleCount,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(_purchasesProvider);
     final label = ref.watch(_purchaseLabelProvider);
 
@@ -262,25 +316,41 @@ class PurchasesScreen extends ConsumerWidget {
             );
           }
 
-          // 전체 통계 계산
-          final allItems =
-              groups.expand((g) => g.items).toList();
+          final allItems = groups.expand((g) => g.items).toList();
           final stats = _calcStats(allItems);
 
-          return Column(
-            children: [
-              // ── 상단 통계 요약 ──
-              _StatsHeader(stats: stats),
+          return CustomScrollView(
+            slivers: [
+              // ── 상단 통계 요약 (고정) ──
+              SliverToBoxAdapter(child: _StatsHeader(stats: stats)),
 
-              // ── 그룹 목록 ──
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  itemCount: groups.length,
-                  itemBuilder: (_, i) =>
-                      _PurchaseGroupCard(group: groups[i]),
+              // ── 그룹별 sticky 헤더 + 아이템 목록 ──
+              for (final group in groups) ...[
+                SliverPersistentHeader(
+                  pinned: _isExpanded(group),
+                  delegate: _GroupHeaderDelegate(
+                    group: group,
+                    isExpanded: _isExpanded(group),
+                    onToggle: () => _toggle(group),
+                  ),
                 ),
-              ),
+                if (_isExpanded(group))
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (_, i) {
+                        if (i == 0) {
+                          return const Divider(
+                              height: 1, indent: AppSpacing.md);
+                        }
+                        return _PurchaseItemRow(
+                            item: group.items[i - 1]);
+                      },
+                      childCount: group.items.length + 1,
+                    ),
+                  ),
+              ],
+              const SliverPadding(
+                  padding: EdgeInsets.only(bottom: 32)),
             ],
           );
         },
@@ -288,32 +358,6 @@ class PurchasesScreen extends ConsumerWidget {
         error: (e, _) => Center(child: Text('$e')),
       ),
     );
-  }
-
-  Map<String, int> _calcStats(List<_PurchaseItem> items) {
-    int purchaseCount = 0, purchaseAmount = 0;
-    int returnCount = 0, returnAmount = 0;
-    int saleCount = 0;
-
-    for (final i in items) {
-      purchaseCount++;
-      purchaseAmount += i.purchasePrice ?? 0;
-      if (i.hasReturn) {
-        returnCount++;
-        returnAmount += i.purchasePrice ?? 0;
-      }
-      if (i.isSold) {
-        saleCount++;
-      }
-    }
-
-    return {
-      'purchaseCount': purchaseCount,
-      'purchaseAmount': purchaseAmount,
-      'returnCount': returnCount,
-      'returnAmount': returnAmount,
-      'saleCount': saleCount,
-    };
   }
 }
 
@@ -409,74 +453,158 @@ class _StatPill extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════
-// 구매 그룹 카드 (날짜+구매처)
+// 그룹 Sticky 헤더 Delegate
 // ══════════════════════════════════════════════════
 
-class _PurchaseGroupCard extends StatelessWidget {
+class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
   final _PurchaseGroup group;
-  const _PurchaseGroupCard({required this.group});
+  final bool isExpanded;
+  final VoidCallback onToggle;
+
+  static const double _h = 70.0;
+
+  const _GroupHeaderDelegate({
+    required this.group,
+    required this.isExpanded,
+    required this.onToggle,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: ExpansionTile(
-          tilePadding:
-              const EdgeInsets.fromLTRB(AppSpacing.md, 6, AppSpacing.sm, 6),
-          childrenPadding: EdgeInsets.zero,
-          title: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+  double get maxExtent => _h;
+  @override
+  double get minExtent => _h;
+  @override
+  bool shouldRebuild(_GroupHeaderDelegate old) =>
+      old.isExpanded != isExpanded ||
+      old.group.items.length != group.items.length ||
+      old.group.totalPrice != group.totalPrice;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final hasReturn = group.returnCount > 0;
+    final cardColor = Theme.of(context).cardTheme.color ??
+        Theme.of(context).colorScheme.surface;
+    // SizedBox.expand() 로 child가 SliverPersistentHeader가 제공하는
+    // 전체 높이를 채우게 하여 childExtent == maxExtent 보장 → paintExtent == layoutExtent
+    return SizedBox.expand(
+      child: Container(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md, 4, AppSpacing.md, 4),
+          child: Container(
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outline
+                    .withAlpha(isExpanded ? 60 : 30),
+              ),
+              boxShadow: overlapsContent
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(20),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              onTap: onToggle,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md, 10, AppSpacing.sm, 10),
+                child: Row(
                   children: [
-                    Text(
-                      group.date,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                    // 날짜 + 구매처
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            group.date,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            group.sourceName,
+                            style: AppTheme.dataStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      group.sourceName,
-                      style: AppTheme.dataStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary),
+                    // 건수 + 금액 (반품 포함 시 -X건 / -XX원 추가)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Text('${group.items.length}건',
+                                style: AppTheme.dataStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w500)),
+                            if (hasReturn) ...[
+                              const SizedBox(width: 4),
+                              Text('-${group.returnCount}건',
+                                  style: AppTheme.dataStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.error)),
+                            ],
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            Text(
+                              '${_wonFormat.format(group.totalPrice)}원',
+                              style: AppTheme.dataStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary),
+                            ),
+                            if (hasReturn) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '-${_wonFormat.format(group.returnAmount)}원',
+                                style: AppTheme.dataStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.error),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      isExpanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      size: 20,
+                      color: AppColors.textSecondary,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${group.items.length}건',
-                    style: AppTheme.dataStyle(
-                        fontSize: 11, fontWeight: FontWeight.w500),
-                  ),
-                  Text(
-                    '${_wonFormat.format(group.totalPrice)}원',
-                    style: AppTheme.dataStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          children: [
-            const Divider(height: 1, indent: AppSpacing.md),
-            for (final item in group.items) _PurchaseItemRow(item: item),
-          ],
-        ),
-      ),
-    );
+            ),        // InkWell
+            ),        // Material
+          ),          // Container (inner card)
+        ),            // Padding (outer)
+      ),              // Container (outer bg)
+    );               // SizedBox
   }
 }
 
@@ -502,10 +630,10 @@ class _PurchaseItemRow extends StatelessWidget {
               width: 32,
               child: Text(
                 item.sizeKr,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(fontWeight: FontWeight.w600),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: item.hasReturn ? AppColors.textTertiary : null,
+                    ),
               ),
             ),
             // 모델명
@@ -518,7 +646,11 @@ class _PurchaseItemRow extends StatelessWidget {
                       Expanded(
                         child: Text(
                           item.modelName,
-                          style: Theme.of(context).textTheme.bodySmall,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: item.hasReturn
+                                    ? AppColors.textTertiary
+                                    : null,
+                              ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -547,12 +679,20 @@ class _PurchaseItemRow extends StatelessWidget {
                 ],
               ),
             ),
-            // 구매가
+            // 구매가 — 반품 시 취소선
             if (item.purchasePrice != null)
               Text(
                 '${_wonFormat.format(item.purchasePrice)}원',
                 style: AppTheme.dataStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: item.hasReturn ? AppColors.textTertiary : null,
+                ).copyWith(
+                  decoration: item.hasReturn
+                      ? TextDecoration.lineThrough
+                      : null,
+                  decorationColor: AppColors.error,
+                ),
               ),
           ],
         ),

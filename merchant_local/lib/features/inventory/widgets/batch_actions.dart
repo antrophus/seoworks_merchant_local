@@ -155,7 +155,7 @@ class BatchActionBar extends ConsumerWidget {
         if (s.contains('OFFICE_STOCK')) ...[
           if (s.contains('ORDER_PLACED')) gap,
           _btn(context, ref, '리스팅등록', Icons.sell, Colors.teal,
-              () => _batchStatusChange(context, ref)),
+              () => _batchListing(context, ref)),
           gap,
           _btn(
               context,
@@ -227,29 +227,31 @@ class BatchActionBar extends ConsumerWidget {
     final isSettle = toStatus == 'SETTLED' || toStatus == 'DEFECT_SETTLED';
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    for (final item in items) {
-      // 정산 전이 시 Sale의 settledAt 자동 설정
-      if (isSettle) {
-        final sale = await ref.read(saleDaoProvider).getByItemId(item.id);
-        if (sale != null) {
-          await ref.read(saleDaoProvider).updateSale(
-                sale.id,
-                SalesCompanion(
-                  itemId: Value(item.id),
-                  platform: Value(sale.platform),
-                  sellPrice: Value(sale.sellPrice),
-                  listedPrice: Value(sale.listedPrice),
-                  saleDate: Value(sale.saleDate ?? today),
-                  settledAt: Value(today),
-                  platformFeeRate: Value(sale.platformFeeRate),
-                ),
-              );
+    await ref.read(databaseProvider).transaction(() async {
+      for (final item in items) {
+        // 정산 전이 시 Sale의 settledAt 자동 설정
+        if (isSettle) {
+          final sale = await ref.read(saleDaoProvider).getByItemId(item.id);
+          if (sale != null) {
+            await ref.read(saleDaoProvider).updateSale(
+                  sale.id,
+                  SalesCompanion(
+                    itemId: Value(item.id),
+                    platform: Value(sale.platform),
+                    sellPrice: Value(sale.sellPrice),
+                    listedPrice: Value(sale.listedPrice),
+                    saleDate: Value(sale.saleDate ?? today),
+                    settledAt: Value(today),
+                    platformFeeRate: Value(sale.platformFeeRate),
+                  ),
+                );
+          }
         }
+        await ref
+            .read(itemDaoProvider)
+            .updateStatus(item.id, toStatus, note: '일괄 $actionLabel');
       }
-      await ref
-          .read(itemDaoProvider)
-          .updateStatus(item.id, toStatus, note: '일괄 $actionLabel');
-    }
+    });
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -257,6 +259,42 @@ class BatchActionBar extends ConsumerWidget {
       );
       onDone();
     }
+  }
+
+  // ── 리스팅 등록 (OFFICE_STOCK → LISTED) ──
+
+  Future<void> _batchListing(BuildContext context, WidgetRef ref) async {
+    final items = <ItemData>[];
+    for (final id in selectedIds) {
+      final item = await ref.read(itemDaoProvider).getById(id);
+      if (item != null && item.currentStatus == 'OFFICE_STOCK') items.add(item);
+    }
+
+    if (items.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('사무실재고 상태의 아이템만 리스팅 등록할 수 있습니다')),
+        );
+      }
+      return;
+    }
+
+    final products = <String, Product>{};
+    for (final item in items) {
+      final prod =
+          await ref.read(masterDaoProvider).getProductById(item.productId);
+      if (prod != null) products[item.productId] = prod;
+    }
+
+    if (!context.mounted) return;
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _BatchListingSheet(items: items, products: products),
+    );
+
+    if (result == true && context.mounted) onDone();
   }
 
   // ── 발송 (LISTED → OUTGOING) ──
@@ -308,8 +346,9 @@ class BatchActionBar extends ConsumerWidget {
     final items = <ItemData>[];
     for (final id in selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
-      if (item != null && item.currentStatus == 'IN_INSPECTION')
+      if (item != null && item.currentStatus == 'IN_INSPECTION') {
         items.add(item);
+      }
     }
 
     if (items.isEmpty) {
@@ -327,26 +366,28 @@ class BatchActionBar extends ConsumerWidget {
     if (confirmed != true) return;
 
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    for (final item in items) {
-      final sale = await ref.read(saleDaoProvider).getByItemId(item.id);
-      if (sale != null) {
-        await ref.read(saleDaoProvider).updateSale(
-              sale.id,
-              SalesCompanion(
-                itemId: Value(item.id),
-                platform: Value(sale.platform),
-                sellPrice: Value(sale.sellPrice),
-                listedPrice: Value(sale.listedPrice),
-                saleDate: Value(sale.saleDate ?? today),
-                settledAt: Value(today),
-                platformFeeRate: Value(sale.platformFeeRate),
-              ),
-            );
+    await ref.read(databaseProvider).transaction(() async {
+      for (final item in items) {
+        final sale = await ref.read(saleDaoProvider).getByItemId(item.id);
+        if (sale != null) {
+          await ref.read(saleDaoProvider).updateSale(
+                sale.id,
+                SalesCompanion(
+                  itemId: Value(item.id),
+                  platform: Value(sale.platform),
+                  sellPrice: Value(sale.sellPrice),
+                  listedPrice: Value(sale.listedPrice),
+                  saleDate: Value(sale.saleDate ?? today),
+                  settledAt: Value(today),
+                  platformFeeRate: Value(sale.platformFeeRate),
+                ),
+              );
+        }
+        await ref
+            .read(itemDaoProvider)
+            .updateStatus(item.id, 'SETTLED', note: '일괄 검수 통과');
       }
-      await ref
-          .read(itemDaoProvider)
-          .updateStatus(item.id, 'SETTLED', note: '일괄 검수 통과');
-    }
+    });
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -363,8 +404,9 @@ class BatchActionBar extends ConsumerWidget {
     final items = <ItemData>[];
     for (final id in selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
-      if (item != null && item.currentStatus == 'IN_INSPECTION')
+      if (item != null && item.currentStatus == 'IN_INSPECTION') {
         items.add(item);
+      }
     }
 
     if (items.isEmpty) {
@@ -491,10 +533,13 @@ class BatchActionBar extends ConsumerWidget {
         context, '${items.length}개', '${chosen.label} 처리하시겠습니까?');
     if (confirmed != true) return;
 
-    for (final item in items) {
-      await ref.read(itemDaoProvider).updateStatus(item.id, chosen.targetStatus,
-          note: '일괄 ${chosen.label}');
-    }
+    await ref.read(databaseProvider).transaction(() async {
+      for (final item in items) {
+        await ref.read(itemDaoProvider).updateStatus(
+            item.id, chosen.targetStatus,
+            note: '일괄 ${chosen.label}');
+      }
+    });
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -528,6 +573,304 @@ class BatchActionBar extends ConsumerWidget {
               child: const Text('확인')),
         ],
       ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════
+// 플랫폼 목록 (리스팅/발송 공통)
+// ══════════════════════════════════════════════════
+
+const _listingPlatforms = ['POIZON', 'KREAM', 'SOLDOUT', 'DIRECT', 'OTHER'];
+const _listingPlatformLabels = {
+  'POIZON': 'POIZON (득물)',
+  'KREAM': 'KREAM',
+  'SOLDOUT': 'SOLDOUT',
+  'DIRECT': '직거래',
+  'OTHER': '기타',
+};
+
+// ══════════════════════════════════════════════════
+// 일괄 리스팅 등록 바텀시트
+// ══════════════════════════════════════════════════
+
+class _BatchListingSheet extends ConsumerStatefulWidget {
+  final List<ItemData> items;
+  final Map<String, Product> products;
+
+  const _BatchListingSheet({required this.items, required this.products});
+
+  @override
+  ConsumerState<_BatchListingSheet> createState() => _BatchListingSheetState();
+}
+
+class _BatchListingSheetState extends ConsumerState<_BatchListingSheet> {
+  String _platform = 'POIZON';
+  late final Map<String, TextEditingController> _priceControllers;
+  final _bulkPriceCtrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _priceControllers = {
+      for (final item in widget.items) item.id: TextEditingController(),
+    };
+  }
+
+  @override
+  void dispose() {
+    for (final c in _priceControllers.values) {
+      c.dispose();
+    }
+    _bulkPriceCtrl.dispose();
+    super.dispose();
+  }
+
+  void _applyBulkPrice() {
+    final price = _bulkPriceCtrl.text.trim();
+    if (price.isEmpty) return;
+    setState(() {
+      for (final c in _priceControllers.values) {
+        c.text = price;
+      }
+    });
+  }
+
+  Future<void> _submit() async {
+    // 등록가 미입력 아이템 체크
+    final missing = widget.items
+        .where((i) =>
+            int.tryParse(_priceControllers[i.id]?.text.trim() ?? '') == null)
+        .toList();
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('등록가를 모두 입력하세요 (${missing.length}개 미입력)')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+
+    final dao = ref.read(saleDaoProvider);
+    final now = DateTime.now().toIso8601String();
+
+    for (final item in widget.items) {
+      final listedPrice = int.parse(_priceControllers[item.id]!.text.trim());
+
+      final existing = await dao.getByItemId(item.id);
+      if (existing != null) {
+        await dao.updateSale(
+          existing.id,
+          SalesCompanion(
+            itemId: Value(item.id),
+            platform: Value(_platform),
+            listedPrice: Value(listedPrice),
+            dataSource: const Value('manual'),
+          ),
+        );
+      } else {
+        await dao.insertSale(SalesCompanion(
+          id: Value(const Uuid().v4()),
+          itemId: Value(item.id),
+          platform: Value(_platform),
+          listedPrice: Value(listedPrice),
+          dataSource: const Value('manual'),
+          createdAt: Value(now),
+        ));
+      }
+
+      await ref
+          .read(itemDaoProvider)
+          .updateStatus(item.id, 'LISTED', note: '일괄 리스팅 등록 ($_platform)');
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${widget.items.length}건 리스팅 등록 완료')),
+      );
+      Navigator.pop(context, true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fmt = NumberFormat('#,###');
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      minChildSize: 0.5,
+      expand: false,
+      builder: (ctx, sc) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // 헤더
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '일괄 리스팅 등록 (${widget.items.length}개)',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+            Expanded(
+              child: ListView(
+                controller: sc,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  // 플랫폼 선택
+                  DropdownButtonFormField<String>(
+                    initialValue: _platform,
+                    decoration: const InputDecoration(
+                      labelText: '판매 플랫폼',
+                      prefixIcon: Icon(Icons.storefront),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: _listingPlatforms
+                        .map((p) => DropdownMenuItem(
+                              value: p,
+                              child: Text(_listingPlatformLabels[p] ?? p),
+                            ))
+                        .toList(),
+                    onChanged: (v) => setState(() => _platform = v!),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 일괄 등록가 입력
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _bulkPriceCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '등록가 일괄 적용 (원)',
+                            isDense: true,
+                            prefixIcon: Icon(Icons.label_outline),
+                          ),
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: _applyBulkPrice,
+                        child: const Text('전체 적용'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const SizedBox(height: 8),
+
+                  // 아이템별 등록가 입력
+                  for (final item in widget.items) ...[
+                    _itemRow(item, fmt),
+                    const SizedBox(height: 8),
+                  ],
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+
+            // 하단 버튼
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _saving ? null : _submit,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.sell),
+                        label: Text('${widget.items.length}개 리스팅 등록'),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('취소'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _itemRow(ItemData item, NumberFormat fmt) {
+    final product = widget.products[item.productId];
+    return Row(
+      children: [
+        Expanded(
+          flex: 3,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                product?.modelCode ?? '?',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                'KR ${item.sizeKr}${item.sizeEu != null ? ' / EU ${item.sizeEu}' : ''}',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 2,
+          child: TextField(
+            controller: _priceControllers[item.id],
+            decoration: const InputDecoration(
+              isDense: true,
+              suffixText: '원',
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            ),
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      ],
     );
   }
 }

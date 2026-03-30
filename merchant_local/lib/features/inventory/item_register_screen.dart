@@ -83,8 +83,10 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
 
   // 신규 상품 필드
   final _modelCodeController = TextEditingController();
+  final _modelCodeFocusNode = FocusNode();
   final _modelNameController = TextEditingController();
   final _categoryController = TextEditingController();
+  final _imageUrlController = TextEditingController();
   String? _selectedBrandId;
 
   // ── 사이즈 목록 (다건 입력) ──
@@ -102,7 +104,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
   final _priceController = TextEditingController();
   final _purchaseDateController = TextEditingController();
   final _purchaseMemoController = TextEditingController();
-  String _paymentMethod = 'PERSONAL_CARD';
+  String _paymentMethod = 'CORPORATE_CARD';
   String? _sourceId;
 
   bool _saving = false;
@@ -113,9 +115,51 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     super.initState();
     _purchaseDateController.text =
         DateFormat('yyyy-MM-dd').format(DateTime.now());
+    _modelCodeFocusNode.addListener(_onModelCodeFocusChanged);
     if (widget.hasPrefill) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _applyPrefill());
     }
+  }
+
+  // ── 신규→기존 전이: 모델코드 포커스 해제 시 DB 조회 ──
+  void _onModelCodeFocusChanged() {
+    if (!_modelCodeFocusNode.hasFocus) _checkModelCodeExists();
+  }
+
+  Future<void> _checkModelCodeExists() async {
+    final code = _modelCodeController.text.trim();
+    if (code.isEmpty || !_isNewProduct) return;
+
+    final existing =
+        await ref.read(masterDaoProvider).getProductByModelCode(code);
+    if (existing != null && mounted) {
+      await _selectProduct(existing);
+      if (!mounted) return;
+      setState(() => _isNewProduct = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('이미 등록된 상품입니다. 기존 상품으로 자동 전환됨: ${existing.modelName}'),
+          backgroundColor: Colors.orange.shade700,
+        ),
+      );
+    }
+  }
+
+  // ── 기존→신규 전이: 검색어로 신규 폼 전환 ──
+  void _switchToNewWithQuery(String query) {
+    setState(() {
+      _isNewProduct = true;
+      _selectedProduct = null;
+      _productSearchController.clear();
+      _showProductDropdown = false;
+      // 검색어가 모델코드 형태(영문+숫자+하이픈)면 모델코드에, 아니면 모델명에 채움
+      final looksLikeCode = RegExp(r'^[A-Za-z0-9\-]+$').hasMatch(query);
+      if (looksLikeCode) {
+        _modelCodeController.text = query;
+      } else {
+        _modelNameController.text = query;
+      }
+    });
   }
 
   Future<void> _applyPrefill() async {
@@ -181,7 +225,10 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     _productSearchController.dispose();
     _modelCodeController.dispose();
     _modelNameController.dispose();
+    _modelCodeFocusNode.removeListener(_onModelCodeFocusChanged);
+    _modelCodeFocusNode.dispose();
     _categoryController.dispose();
+    _imageUrlController.dispose();
     _noteController.dispose();
     _priceController.dispose();
     _purchaseDateController.dispose();
@@ -367,7 +414,10 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     final urlCtrl = TextEditingController();
     final sourceType = _entryType == 'ORDER_PLACED' ? 'online' : 'offline';
 
-    final result = await showDialog<bool>(
+    // showDialog<String?>: 새로 생성된 sourceId를 반환값으로 전달
+    // setState는 dialog가 완전히 닫힌 후 호출해야 함
+    // (dialog callback 내부에서 호출하면 InheritedWidget 정리 도중 rebuild 충돌)
+    final newSourceId = await showDialog<String?>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('${sourceType == 'online' ? '온라인' : '오프라인'} 매입처 추가'),
@@ -397,7 +447,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('취소'),
           ),
           FilledButton(
@@ -412,9 +462,8 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                         urlCtrl.text.isNotEmpty ? urlCtrl.text.trim() : null),
                     createdAt: Value(DateTime.now().toIso8601String()),
                   ));
-              if (ctx.mounted) Navigator.pop(ctx, true);
-              // 선택
-              setState(() => _sourceId = id);
+              // id를 반환값으로 전달 — setState는 dialog 완전 종료 후 호출
+              if (ctx.mounted) Navigator.pop(ctx, id);
             },
             child: const Text('추가'),
           ),
@@ -422,13 +471,14 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
       ),
     );
 
-    if (result == true) {
-      // Provider 새로고침
-      ref.invalidate(_allSourcesProvider);
-    }
-
     nameCtrl.dispose();
     urlCtrl.dispose();
+
+    if (newSourceId != null) {
+      ref.invalidate(_allSourcesProvider);
+      // dialog가 완전히 닫힌 후 setState 호출 → assertion 에러 방지
+      setState(() => _sourceId = newSourceId);
+    }
   }
 
   // ── 저장 ──
@@ -480,6 +530,9 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
             category: Value(_categoryController.text.isNotEmpty
                 ? _categoryController.text.trim()
                 : null),
+            imageUrl: Value(_imageUrlController.text.trim().isNotEmpty
+                ? _imageUrlController.text.trim()
+                : null),
             createdAt: Value(now),
           );
           await ref.read(masterDaoProvider).upsertProduct(productEntry);
@@ -491,23 +544,33 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
 
       // ── 2) 사이즈별 Item + Purchase 생성 ──
       final price = int.tryParse(_priceController.text.replaceAll(',', ''));
-      int createdCount = 0;
 
+      // SKU는 트랜잭션 밖에서 미리 생성 (DB 조회 필요)
+      final rowData =
+          <({String itemId, String purchaseId, String sku, _SizeEntry entry})>[];
       for (final sizeEntry in _sizeEntries) {
         for (int q = 0; q < sizeEntry.qty; q++) {
-          createdCount++;
           final itemId = _uuid.v4();
           final purchaseId = _uuid.v4();
-
           final sku = await _generateSku(modelCode, sizeEntry.sizeKr, q + 1);
+          rowData.add(
+              (itemId: itemId, purchaseId: purchaseId, sku: sku, entry: sizeEntry));
+        }
+      }
 
+      // 모든 INSERT를 단일 트랜잭션으로 묶음
+      // → Drift stream이 커밋 후 1회만 emit
+      // → loadBatchData 실행 시 모든 purchase가 이미 DB에 존재 (매입일 미상 버그 방지)
+      final db = ref.read(databaseProvider);
+      await db.transaction(() async {
+        for (final row in rowData) {
           await ref.read(itemDaoProvider).insertItem(ItemsCompanion(
-                id: Value(itemId),
+                id: Value(row.itemId),
                 productId: Value(productId),
-                sku: Value(sku),
-                sizeKr: Value(sizeEntry.sizeKr),
+                sku: Value(row.sku),
+                sizeKr: Value(row.entry.sizeKr),
                 sizeEu: Value(
-                    sizeEntry.sizeEu.isNotEmpty ? sizeEntry.sizeEu : null),
+                    row.entry.sizeEu.isNotEmpty ? row.entry.sizeEu : null),
                 isPersonal: Value(_isPersonal),
                 currentStatus: Value(_entryType),
                 note: Value(_noteController.text.isNotEmpty
@@ -518,8 +581,8 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
               ));
 
           await ref.read(purchaseDaoProvider).insertPurchase(PurchasesCompanion(
-                id: Value(purchaseId),
-                itemId: Value(itemId),
+                id: Value(row.purchaseId),
+                itemId: Value(row.itemId),
                 purchasePrice: Value(price),
                 paymentMethod: Value(_paymentMethod),
                 purchaseDate: Value(_purchaseDateController.text.isNotEmpty
@@ -531,12 +594,10 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                     : null),
                 createdAt: Value(now),
               ));
-
-          await ref
-              .read(itemDaoProvider)
-              .updateStatus(itemId, _entryType, note: '입고 등록');
         }
-      }
+      });
+
+      final createdCount = rowData.length;
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -755,6 +816,24 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                   },
                 ),
               ),
+            // 검색어 있으나 결과 없음 → 신규 등록 전환 유도
+            if (_productSearchController.text.isNotEmpty &&
+                _filteredProducts.isEmpty &&
+                _selectedProduct == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      _switchToNewWithQuery(_productSearchController.text.trim()),
+                  icon: const Icon(Icons.add_circle_outline, size: 18),
+                  label: Text(
+                      '"${_productSearchController.text.trim()}" 신규 상품으로 등록'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.blue,
+                    side: const BorderSide(color: Colors.blue),
+                  ),
+                ),
+              ),
             if (_selectedProduct != null) _buildSelectedProductCard(),
           ],
         );
@@ -892,9 +971,10 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
         ),
         const SizedBox(height: 12),
 
-        // 모델코드
+        // 모델코드 — 포커스 해제 시 기존 상품 여부 자동 체크
         TextFormField(
           controller: _modelCodeController,
+          focusNode: _modelCodeFocusNode,
           decoration: const InputDecoration(
             labelText: '모델코드',
             prefixIcon: Icon(Icons.tag),
@@ -922,16 +1002,68 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
         ),
         const SizedBox(height: 12),
 
-        // 카테고리
+        // 카테고리 퀵 선택
+        Wrap(
+          spacing: 8,
+          children: ['신발', '의류', '가방', '악세사리'].map((cat) {
+            final isSelected = _categoryController.text == cat;
+            return FilterChip(
+              label: Text(cat, style: const TextStyle(fontSize: 13)),
+              selected: isSelected,
+              onSelected: (_) => setState(() {
+                _categoryController.text = isSelected ? '' : cat;
+              }),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
+        // 직접 입력 (퀵 선택 후 수정 or 직접 타이핑)
         TextFormField(
           controller: _categoryController,
           decoration: const InputDecoration(
-            labelText: '카테고리 (선택)',
+            labelText: '카테고리 (선택 또는 직접 입력)',
             prefixIcon: Icon(Icons.category),
             border: OutlineInputBorder(),
-            hintText: '예: 스니커즈',
+            hintText: '예: 스니커즈, 패딩, 크로스백...',
           ),
+          onChanged: (_) => setState(() {}), // 칩 선택 상태 동기화
         ),
+        const SizedBox(height: 12),
+
+        // 이미지 URL
+        TextFormField(
+          controller: _imageUrlController,
+          decoration: const InputDecoration(
+            labelText: '이미지 URL (선택)',
+            prefixIcon: Icon(Icons.image_outlined),
+            border: OutlineInputBorder(),
+            hintText: 'https://...',
+          ),
+          keyboardType: TextInputType.url,
+          onChanged: (_) => setState(() {}),
+        ),
+
+        // 이미지 미리보기
+        if (_imageUrlController.text.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                _imageUrlController.text,
+                height: 120,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 48,
+                  color: Colors.grey.shade100,
+                  child: const Center(
+                    child: Text('이미지 로드 실패',
+                        style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

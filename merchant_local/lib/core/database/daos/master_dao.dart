@@ -37,6 +37,9 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
   Future<List<Source>> getAllSources() =>
       (select(sources)..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
 
+  Future<Source?> getSourceById(String id) =>
+      (select(sources)..where((t) => t.id.equals(id))).getSingleOrNull();
+
   Stream<List<Source>> watchAllSources() =>
       (select(sources)..orderBy([(t) => OrderingTerm.asc(t.name)])).watch();
 

@@ -375,6 +375,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
           const Divider(height: 48),
 
+          // ── 데이터 정리 ──────────────────────────
+          Text(
+            '데이터 정리',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '중복 배송 이력 등 비정상 데이터를 정리합니다.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final count = await ref
+                    .read(subRecordDaoProvider)
+                    .cleanupDuplicateShipments();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(count > 0
+                            ? '중복 배송 이력 $count건 삭제 완료'
+                            : '정리할 중복 데이터가 없습니다')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.cleaning_services_outlined),
+              label: const Text('중복 배송 이력 정리'),
+            ),
+          ),
+          const Divider(height: 48),
+
           // ── LLM API 키 (AI 이미지 인식) ──────────
           Text(
             'AI 이미지 인식 (LLM)',

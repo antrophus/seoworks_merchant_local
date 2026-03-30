@@ -41,6 +41,7 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
   final _feeRateController = TextEditingController();
   final _dateController = TextEditingController();
   final _settledAtController = TextEditingController();
+  final _trackingController = TextEditingController();
   final _memoController = TextEditingController();
 
   String _platform = 'POIZON';
@@ -52,6 +53,8 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
     super.initState();
     if (!widget.isEditing) {
       _dateController.text = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    } else {
+      _loadExisting();
     }
   }
 
@@ -62,6 +65,7 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
     _feeRateController.dispose();
     _dateController.dispose();
     _settledAtController.dispose();
+    _trackingController.dispose();
     _memoController.dispose();
     super.dispose();
   }
@@ -83,6 +87,7 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
         : '';
     _dateController.text = sale.saleDate ?? '';
     _settledAtController.text = sale.settledAt ?? '';
+    _trackingController.text = sale.trackingNumber ?? '';
     _memoController.text = sale.memo ?? '';
     if (mounted) setState(() {});
   }
@@ -135,6 +140,9 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
       final feeRate =
           feeRatePercent != null ? feeRatePercent / 100.0 : null;
 
+      final saleDate =
+          _dateController.text.isNotEmpty ? _dateController.text : null;
+
       final entry = SalesCompanion(
         id: Value(widget.saleId ?? const Uuid().v4()),
         itemId: Value(widget.itemId),
@@ -142,10 +150,12 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
         listedPrice: Value(listedPrice),
         sellPrice: Value(sellPrice),
         platformFeeRate: Value(feeRate),
-        saleDate: Value(
-            _dateController.text.isNotEmpty ? _dateController.text : null),
+        saleDate: Value(saleDate),
+        outgoingDate: Value(saleDate), // 발송일 = 판매일 동기화
         settledAt: Value(
             _settledAtController.text.isNotEmpty ? _settledAtController.text : null),
+        trackingNumber: Value(
+            _trackingController.text.isNotEmpty ? _trackingController.text.trim() : null),
         memo: Value(
             _memoController.text.isNotEmpty ? _memoController.text : null),
         dataSource: const Value('manual'),
@@ -157,6 +167,44 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
         await dao.updateSale(widget.saleId!, entry);
       } else {
         await dao.insertSale(entry);
+      }
+
+      // 배송 이력 및 동일 운송장의 모든 레코드 동기화
+      final trackingNum = _trackingController.text.trim();
+      final subDao = ref.read(subRecordDaoProvider);
+      final saleDao = ref.read(saleDaoProvider);
+
+      if (saleDate != null) {
+        // 1. 이 아이템의 shipment 날짜 동기화
+        await subDao.updateShipmentsOutgoingDate(widget.itemId, saleDate);
+
+        // 2. 동일 운송장의 모든 shipment + sale 날짜 동기화
+        if (trackingNum.isNotEmpty) {
+          await subDao.updateShipmentsOutgoingDateByTracking(
+              trackingNum, saleDate);
+
+          // 동일 운송장을 가진 다른 아이템의 sale도 동기화
+          final relatedShipments =
+              await subDao.getShipmentsByTracking(trackingNum);
+          for (final sh in relatedShipments) {
+            if (sh.itemId == widget.itemId) continue;
+            final relatedSale = await saleDao.getByItemId(sh.itemId);
+            if (relatedSale != null) {
+              await saleDao.updateSale(
+                relatedSale.id,
+                SalesCompanion(
+                  itemId: Value(relatedSale.itemId),
+                  platform: Value(relatedSale.platform),
+                  sellPrice: Value(relatedSale.sellPrice),
+                  listedPrice: Value(relatedSale.listedPrice),
+                  saleDate: Value(saleDate),
+                  outgoingDate: Value(saleDate),
+                  platformFeeRate: Value(relatedSale.platformFeeRate),
+                ),
+              );
+            }
+          }
+        }
       }
 
       if (mounted) context.pop(true);
@@ -173,10 +221,6 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.isEditing && !_loaded) {
-      _loadExisting();
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isEditing ? '판매 수정' : '판매 등록'),
@@ -338,6 +382,17 @@ class _SaleFormScreenState extends ConsumerState<SaleFormScreen> {
               ),
               readOnly: true,
               onTap: _pickSettledAt,
+            ),
+            const SizedBox(height: 16),
+
+            // 운송장 번호
+            TextFormField(
+              controller: _trackingController,
+              decoration: const InputDecoration(
+                labelText: '운송장 번호',
+                prefixIcon: Icon(Icons.local_shipping),
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 16),
 

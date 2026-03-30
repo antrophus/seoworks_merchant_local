@@ -13,6 +13,7 @@ import 'features/logistics/logistics_screen.dart';
 import 'features/purchases/purchases_screen.dart';
 import 'features/sales/sales_screen.dart';
 import 'features/inventory/item_register_screen.dart';
+import 'features/inventory/product_form_screen.dart';
 
 final _router = GoRouter(
   initialLocation: '/',
@@ -44,6 +45,21 @@ final _router = GoRouter(
         itemId: state.pathParameters['id']!,
         saleId: state.uri.queryParameters['edit'],
       ),
+    ),
+    GoRoute(
+      path: '/item/:id/edit',
+      builder: (context, state) {
+        final productId = state.uri.queryParameters['productId'];
+        if (productId == null) {
+          return const Scaffold(
+            body: Center(child: Text('잘못된 접근: productId 누락')),
+          );
+        }
+        return ProductFormScreen(
+          itemId: state.pathParameters['id']!,
+          productId: productId,
+        );
+      },
     ),
     GoRoute(
       path: '/analytics',

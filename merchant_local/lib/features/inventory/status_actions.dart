@@ -277,12 +277,14 @@ Future<bool?> _executeAction({
 
   // 검수 반려
   if (action.needsInspection) {
+    final defectType = action.defectType;
+    if (defectType == null) return false;
     return _showInspectionDialog(
       context: context,
       ref: ref,
       item: item,
       targetStatus: action.targetStatus,
-      defectType: action.defectType!,
+      defectType: defectType,
     );
   }
 
@@ -486,6 +488,27 @@ Future<bool?> _showShipmentDialog({
                     createdAt: Value(DateTime.now().toIso8601String()),
                   ),
                 );
+
+            // sale 레코드의 발송일·판매일도 동기화
+            final sale =
+                await ref.read(saleDaoProvider).getByItemId(item.id);
+            if (sale != null) {
+              await ref.read(saleDaoProvider).updateSale(
+                    sale.id,
+                    SalesCompanion(
+                      itemId: Value(item.id),
+                      platform: Value(sale.platform),
+                      sellPrice: Value(sale.sellPrice),
+                      listedPrice: Value(sale.listedPrice),
+                      saleDate: Value(sale.saleDate ?? today),
+                      outgoingDate: Value(today),
+                      trackingNumber: Value(trackingCtrl.text.isNotEmpty
+                          ? trackingCtrl.text.trim()
+                          : sale.trackingNumber),
+                      platformFeeRate: Value(sale.platformFeeRate),
+                    ),
+                  );
+            }
 
             // 상태 전이
             await ref
@@ -1577,11 +1600,16 @@ Future<bool?> _showSellAndShipDialog({
                     );
               }
 
-              // 3. 상태 전이 LISTED → OUTGOING
-              await ref.read(itemDaoProvider).updateStatus(
-                  item.id, 'OUTGOING',
-                  note:
-                      '판매/발송 (${NumberFormat('#,###').format(sellPrice)}원)');
+              // 3. 상태 전이 LISTED → OUTGOING (이미 OUTGOING이면 건너뜀)
+              final currentItem =
+                  await ref.read(itemDaoProvider).getById(item.id);
+              if (currentItem != null &&
+                  currentItem.currentStatus != 'OUTGOING') {
+                await ref.read(itemDaoProvider).updateStatus(
+                    item.id, 'OUTGOING',
+                    note:
+                        '판매/발송 (${NumberFormat('#,###').format(sellPrice)}원)');
+              }
 
               if (ctx.mounted) Navigator.pop(ctx, true);
             },
