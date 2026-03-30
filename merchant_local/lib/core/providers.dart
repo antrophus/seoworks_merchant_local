@@ -82,9 +82,13 @@ final itemsProvider = StreamProvider<List<ItemData>>((ref) {
   return ref.watch(itemDaoProvider).watchAll();
 });
 
-final itemStatusCountsProvider = FutureProvider<Map<String, int>>((ref) {
-  ref.watch(itemsProvider); // items 변경 시 자동 갱신
-  return ref.read(itemDaoProvider).getStatusCounts();
+final itemStatusCountsProvider = FutureProvider<Map<String, int>>((ref) async {
+  final items = await ref.watch(itemsProvider.future);
+  final counts = <String, int>{};
+  for (final item in items) {
+    counts[item.currentStatus] = (counts[item.currentStatus] ?? 0) + 1;
+  }
+  return counts;
 });
 
 /// 대시보드 자산 개요

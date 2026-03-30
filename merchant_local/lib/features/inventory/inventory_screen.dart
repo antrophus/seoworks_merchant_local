@@ -281,9 +281,35 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
           return BatchActionBar(
             selectedIds: selectedIds,
             onDone: () {
+              final search = ref.read(inventorySearchProvider);
+              final filter = ref.read(inventoryFilterProvider);
+
               ref.read(selectionProvider.notifier).clear();
               ref.invalidate(itemsProvider);
               ref.invalidate(itemStatusCountsProvider);
+
+              if (search.isNotEmpty) {
+                // 현재 검색 키만 invalidate
+                final key =
+                    filter != null ? '$search|$filter' : search;
+                ref.invalidate(searchResultProvider(key));
+                // _subIndex 활성 시 하위 필터별 검색 결과도 invalidate
+                if (filter != null && filter.contains(',')) {
+                  for (final s in filter.split(',')) {
+                    ref.invalidate(searchResultProvider('$search|$s'));
+                  }
+                }
+              } else if (filter != null) {
+                if (filter.contains(',')) {
+                  ref.invalidate(multiStatusProvider(filter));
+                  // _subIndex 활성 시 단일 상태 필터도 invalidate
+                  for (final s in filter.split(',')) {
+                    ref.invalidate(inventoryFilteredProvider(s));
+                  }
+                } else {
+                  ref.invalidate(inventoryFilteredProvider(filter));
+                }
+              }
             },
           );
         }),

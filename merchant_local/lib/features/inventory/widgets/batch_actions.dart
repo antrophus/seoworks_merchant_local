@@ -14,7 +14,7 @@ import '../status_actions.dart';
 // 일괄 처리 하단 액션바
 // ══════════════════════════════════════════════════
 
-class BatchActionBar extends ConsumerWidget {
+class BatchActionBar extends ConsumerStatefulWidget {
   final Set<String> selectedIds;
   final VoidCallback onDone;
 
@@ -22,10 +22,17 @@ class BatchActionBar extends ConsumerWidget {
       {super.key, required this.selectedIds, required this.onDone});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BatchActionBar> createState() => _BatchActionBarState();
+}
+
+class _BatchActionBarState extends ConsumerState<BatchActionBar> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
     final filter = ref.watch(inventoryFilterProvider);
     final currentFilterDef = findCurrentFilter(filter);
-    final buttons = _buildButtons(context, ref, currentFilterDef?.statuses);
+    final buttons = _buildButtons(context, currentFilterDef?.statuses);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -39,7 +46,7 @@ class BatchActionBar extends ConsumerWidget {
         top: false,
         child: Row(
           children: [
-            Text('${selectedIds.length}개',
+            Text('${widget.selectedIds.length}개',
                 style:
                     AppTheme.dataStyle(fontSize: 16, color: AppColors.primary)),
             const SizedBox(width: 12),
@@ -56,11 +63,11 @@ class BatchActionBar extends ConsumerWidget {
   }
 
   List<Widget> _buildButtons(
-      BuildContext context, WidgetRef ref, List<String>? statuses) {
+      BuildContext context, List<String>? statuses) {
     if (statuses == null) {
       return [
-        _btn(context, ref, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
-            () => _batchStatusChange(context, ref)),
+        _btn(context, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
+            () => _batchStatusChange(context)),
       ];
     }
 
@@ -71,37 +78,34 @@ class BatchActionBar extends ConsumerWidget {
     if (s.contains('LISTED') || s.contains('POIZON_STORAGE')) {
       return [
         if (s.contains('LISTED')) ...[
-          _btn(context, ref, '발송', Icons.local_shipping,
-              AppColors.statusOutgoing, () => _batchSellAndShip(context, ref)),
+          _btn(context, '발송', Icons.local_shipping,
+              AppColors.statusOutgoing, () => _batchSellAndShip(context)),
           gap,
           _btn(
               context,
-              ref,
               '리스팅취소',
               Icons.warehouse,
               Colors.blue,
               () => _batchSimpleTransition(
-                  context, ref, 'LISTED', 'OFFICE_STOCK', '리스팅 취소')),
+                  context, 'LISTED', 'OFFICE_STOCK', '리스팅 취소')),
         ],
         if (s.contains('POIZON_STORAGE')) ...[
           if (s.contains('LISTED')) gap,
           _btn(
               context,
-              ref,
               '정산완료',
               Icons.check_circle,
               AppColors.success,
               () => _batchSimpleTransition(
-                  context, ref, 'POIZON_STORAGE', 'SETTLED', '보관판매 정산')),
+                  context, 'POIZON_STORAGE', 'SETTLED', '보관판매 정산')),
           gap,
           _btn(
               context,
-              ref,
               '반송전환',
               Icons.local_shipping_outlined,
               Colors.indigo,
               () => _batchSimpleTransition(
-                  context, ref, 'POIZON_STORAGE', 'CANCEL_RETURNING', '반송 전환')),
+                  context, 'POIZON_STORAGE', 'CANCEL_RETURNING', '반송 전환')),
         ],
       ];
     }
@@ -112,20 +116,19 @@ class BatchActionBar extends ConsumerWidget {
         if (s.contains('OUTGOING')) ...[
           _btn(
               context,
-              ref,
               '검수도착',
               Icons.fact_check,
               Colors.purple,
               () => _batchSimpleTransition(
-                  context, ref, 'OUTGOING', 'IN_INSPECTION', '검수 도착')),
+                  context, 'OUTGOING', 'IN_INSPECTION', '검수 도착')),
         ],
         if (s.contains('IN_INSPECTION')) ...[
           if (s.contains('OUTGOING')) gap,
-          _btn(context, ref, '검수통과', Icons.check_circle, AppColors.success,
-              () => _batchInspectionPass(context, ref)),
+          _btn(context, '검수통과', Icons.check_circle, AppColors.success,
+              () => _batchInspectionPass(context)),
           gap,
-          _btn(context, ref, '반려', Icons.warning_amber, Colors.amber,
-              () => _batchInspectionReject(context, ref)),
+          _btn(context, '반려', Icons.warning_amber, Colors.amber,
+              () => _batchInspectionReject(context)),
         ],
       ];
     }
@@ -136,63 +139,70 @@ class BatchActionBar extends ConsumerWidget {
         if (s.contains('ORDER_PLACED')) ...[
           _btn(
               context,
-              ref,
               '입고',
               Icons.warehouse,
               Colors.blue,
               () => _batchSimpleTransition(
-                  context, ref, 'ORDER_PLACED', 'OFFICE_STOCK', '입고')),
+                  context, 'ORDER_PLACED', 'OFFICE_STOCK', '입고')),
           gap,
           _btn(
               context,
-              ref,
               '주문취소',
               Icons.cancel,
               Colors.red,
               () => _batchSimpleTransition(
-                  context, ref, 'ORDER_PLACED', 'ORDER_CANCELLED', '주문 취소')),
+                  context, 'ORDER_PLACED', 'ORDER_CANCELLED', '주문 취소')),
         ],
         if (s.contains('OFFICE_STOCK')) ...[
           if (s.contains('ORDER_PLACED')) gap,
-          _btn(context, ref, '리스팅등록', Icons.sell, Colors.teal,
-              () => _batchListing(context, ref)),
+          _btn(context, '리스팅등록', Icons.sell, Colors.teal,
+              () => _batchListing(context)),
           gap,
           _btn(
               context,
-              ref,
               '공급처반품',
               Icons.undo,
               Colors.blueGrey,
               () => _batchSimpleTransition(
-                  context, ref, 'OFFICE_STOCK', 'SUPPLIER_RETURN', '공급처 반품')),
+                  context, 'OFFICE_STOCK', 'SUPPLIER_RETURN', '공급처 반품')),
           gap,
           _btn(
               context,
-              ref,
               '폐기',
               Icons.card_giftcard,
               Colors.pink,
               () => _batchSimpleTransition(
-                  context, ref, 'OFFICE_STOCK', 'SAMPLE', '폐기')),
+                  context, 'OFFICE_STOCK', 'SAMPLE', '폐기')),
         ],
       ];
     }
 
     // 기타 → 범용
     return [
-      _btn(context, ref, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
-          () => _batchStatusChange(context, ref)),
+      _btn(context, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
+          () => _batchStatusChange(context)),
     ];
   }
 
-  Widget _btn(BuildContext context, WidgetRef ref, String label, IconData icon,
+  Widget _btn(BuildContext context, String label, IconData icon,
       Color color, Future<void> Function() action) {
     return OutlinedButton.icon(
-      onPressed: action,
-      icon: Icon(icon, size: 16, color: color),
-      label: Text(label, style: TextStyle(fontSize: 12, color: color)),
+      onPressed: _busy
+          ? null
+          : () async {
+              if (_busy) return;
+              setState(() => _busy = true);
+              try {
+                await action();
+              } finally {
+                if (mounted) setState(() => _busy = false);
+              }
+            },
+      icon: Icon(icon, size: 16, color: _busy ? Colors.grey : color),
+      label: Text(label,
+          style: TextStyle(fontSize: 12, color: _busy ? Colors.grey : color)),
       style: OutlinedButton.styleFrom(
-        side: BorderSide(color: color.withAlpha(80)),
+        side: BorderSide(color: (_busy ? Colors.grey : color).withAlpha(80)),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -202,10 +212,10 @@ class BatchActionBar extends ConsumerWidget {
 
   // ── 공통: 단순 상태 전이 ──
 
-  Future<void> _batchSimpleTransition(BuildContext context, WidgetRef ref,
+  Future<void> _batchSimpleTransition(BuildContext context,
       String fromStatus, String toStatus, String actionLabel) async {
     final items = <ItemData>[];
-    for (final id in selectedIds) {
+    for (final id in widget.selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
       if (item != null && item.currentStatus == fromStatus) items.add(item);
     }
@@ -223,6 +233,7 @@ class BatchActionBar extends ConsumerWidget {
     final confirmed = await _confirmDialog(
         context, '${items.length}개', '$actionLabel 처리하시겠습니까?');
     if (confirmed != true) return;
+    if (!context.mounted) return;
 
     final isSettle = toStatus == 'SETTLED' || toStatus == 'DEFECT_SETTLED';
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -257,15 +268,15 @@ class BatchActionBar extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${items.length}건 $actionLabel 완료')),
       );
-      onDone();
+      widget.onDone();
     }
   }
 
   // ── 리스팅 등록 (OFFICE_STOCK → LISTED) ──
 
-  Future<void> _batchListing(BuildContext context, WidgetRef ref) async {
+  Future<void> _batchListing(BuildContext context) async {
     final items = <ItemData>[];
-    for (final id in selectedIds) {
+    for (final id in widget.selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
       if (item != null && item.currentStatus == 'OFFICE_STOCK') items.add(item);
     }
@@ -294,17 +305,17 @@ class BatchActionBar extends ConsumerWidget {
       builder: (_) => _BatchListingSheet(items: items, products: products),
     );
 
-    if (result == true && context.mounted) onDone();
+    if (result == true && context.mounted) widget.onDone();
   }
 
   // ── 발송 (LISTED → OUTGOING) ──
 
-  Future<void> _batchSellAndShip(BuildContext context, WidgetRef ref) async {
+  Future<void> _batchSellAndShip(BuildContext context) async {
     final items = <ItemData>[];
     final sales = <String, SaleData>{};
     final products = <String, Product>{};
 
-    for (final id in selectedIds) {
+    for (final id in widget.selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
       if (item == null) continue;
       items.add(item);
@@ -337,14 +348,14 @@ class BatchActionBar extends ConsumerWidget {
       ),
     );
 
-    if (result == true && context.mounted) onDone();
+    if (result == true && context.mounted) widget.onDone();
   }
 
   // ── 검수 통과 (IN_INSPECTION → SETTLED) ──
 
-  Future<void> _batchInspectionPass(BuildContext context, WidgetRef ref) async {
+  Future<void> _batchInspectionPass(BuildContext context) async {
     final items = <ItemData>[];
-    for (final id in selectedIds) {
+    for (final id in widget.selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
       if (item != null && item.currentStatus == 'IN_INSPECTION') {
         items.add(item);
@@ -364,6 +375,7 @@ class BatchActionBar extends ConsumerWidget {
     final confirmed = await _confirmDialog(
         context, '${items.length}개', '검수 통과(정산) 처리하시겠습니까?');
     if (confirmed != true) return;
+    if (!context.mounted) return;
 
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     await ref.read(databaseProvider).transaction(() async {
@@ -393,16 +405,15 @@ class BatchActionBar extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${items.length}건 검수 통과 완료')),
       );
-      onDone();
+      widget.onDone();
     }
   }
 
   // ── 검수 반려 (IN_INSPECTION → 바텀시트에서 선택) ──
 
-  Future<void> _batchInspectionReject(
-      BuildContext context, WidgetRef ref) async {
+  Future<void> _batchInspectionReject(BuildContext context) async {
     final items = <ItemData>[];
-    for (final id in selectedIds) {
+    for (final id in widget.selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
       if (item != null && item.currentStatus == 'IN_INSPECTION') {
         items.add(item);
@@ -455,6 +466,7 @@ class BatchActionBar extends ConsumerWidget {
     final confirmed = await _confirmDialog(
         context, '${items.length}개', '${chosen.label} 처리하시겠습니까?');
     if (confirmed != true) return;
+    if (!context.mounted) return;
 
     for (final item in items) {
       await ref.read(itemDaoProvider).updateStatus(item.id, chosen.targetStatus,
@@ -465,15 +477,15 @@ class BatchActionBar extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${items.length}건 ${chosen.label} 완료')),
       );
-      onDone();
+      widget.onDone();
     }
   }
 
   // ── 범용 상태 변경 ──
 
-  Future<void> _batchStatusChange(BuildContext context, WidgetRef ref) async {
+  Future<void> _batchStatusChange(BuildContext context) async {
     final items = <ItemData>[];
-    for (final id in selectedIds) {
+    for (final id in widget.selectedIds) {
       final item = await ref.read(itemDaoProvider).getById(id);
       if (item != null) items.add(item);
     }
@@ -532,6 +544,7 @@ class BatchActionBar extends ConsumerWidget {
     final confirmed = await _confirmDialog(
         context, '${items.length}개', '${chosen.label} 처리하시겠습니까?');
     if (confirmed != true) return;
+    if (!context.mounted) return;
 
     await ref.read(databaseProvider).transaction(() async {
       for (final item in items) {
@@ -545,7 +558,7 @@ class BatchActionBar extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${items.length}건 ${chosen.label} 완료')),
       );
-      onDone();
+      widget.onDone();
     }
   }
 
@@ -654,42 +667,56 @@ class _BatchListingSheetState extends ConsumerState<_BatchListingSheet> {
 
     final dao = ref.read(saleDaoProvider);
     final now = DateTime.now().toIso8601String();
+    int successCount = 0;
+    int failureCount = 0;
 
     for (final item in widget.items) {
-      final listedPrice = int.parse(_priceControllers[item.id]!.text.trim());
+      try {
+        final listedPrice = int.parse(_priceControllers[item.id]!.text.trim());
 
-      final existing = await dao.getByItemId(item.id);
-      if (existing != null) {
-        await dao.updateSale(
-          existing.id,
-          SalesCompanion(
+        final existing = await dao.getByItemId(item.id);
+        if (existing != null) {
+          await dao.updateSale(
+            existing.id,
+            SalesCompanion(
+              itemId: Value(item.id),
+              platform: Value(_platform),
+              listedPrice: Value(listedPrice),
+              dataSource: const Value('manual'),
+            ),
+          );
+        } else {
+          await dao.insertSale(SalesCompanion(
+            id: Value(const Uuid().v4()),
             itemId: Value(item.id),
             platform: Value(_platform),
             listedPrice: Value(listedPrice),
             dataSource: const Value('manual'),
-          ),
-        );
-      } else {
-        await dao.insertSale(SalesCompanion(
-          id: Value(const Uuid().v4()),
-          itemId: Value(item.id),
-          platform: Value(_platform),
-          listedPrice: Value(listedPrice),
-          dataSource: const Value('manual'),
-          createdAt: Value(now),
-        ));
-      }
+            createdAt: Value(now),
+          ));
+        }
 
-      await ref
-          .read(itemDaoProvider)
-          .updateStatus(item.id, 'LISTED', note: '일괄 리스팅 등록 ($_platform)');
+        await ref
+            .read(itemDaoProvider)
+            .updateStatus(item.id, 'LISTED', note: '일괄 리스팅 등록 ($_platform)');
+        successCount++;
+      } catch (_) {
+        failureCount++;
+      }
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${widget.items.length}건 리스팅 등록 완료')),
-      );
-      Navigator.pop(context, true);
+      final msg = failureCount == 0
+          ? '${widget.items.length}건 리스팅 등록 완료'
+          : successCount > 0
+              ? '$successCount건 완료, $failureCount건 실패'
+              : '$failureCount건 처리 실패';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      if (successCount > 0) {
+        Navigator.pop(context, true);
+      } else {
+        setState(() => _saving = false);
+      }
     }
   }
 
@@ -1101,54 +1128,64 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
 
   Future<void> _submit() async {
     const uuid = Uuid();
+    int successCount = 0;
+    int failureCount = 0;
 
     for (final item in widget.items) {
       final sellPrice = int.tryParse(_priceControllers[item.id]?.text ?? '');
       if (sellPrice == null) continue;
 
-      final sale = widget.sales[item.id];
+      try {
+        final sale = widget.sales[item.id];
 
-      if (sale != null) {
-        await ref.read(saleDaoProvider).updateSale(
-              sale.id,
-              SalesCompanion(
-                itemId: Value(item.id),
-                platform: Value(sale.platform),
-                sellPrice: Value(sellPrice),
-                listedPrice: Value(sale.listedPrice),
-                saleDate: Value(_shipDate),
-                outgoingDate: Value(_shipDate),
-                trackingNumber: Value(_trackingCtrl.text.isNotEmpty
-                    ? _trackingCtrl.text.trim()
-                    : null),
-                platformFeeRate: Value(sale.platformFeeRate),
-              ),
-            );
+        if (sale != null) {
+          await ref.read(saleDaoProvider).updateSale(
+                sale.id,
+                SalesCompanion(
+                  itemId: Value(item.id),
+                  platform: Value(sale.platform),
+                  sellPrice: Value(sellPrice),
+                  listedPrice: Value(sale.listedPrice),
+                  saleDate: Value(_shipDate),
+                  outgoingDate: Value(_shipDate),
+                  trackingNumber: Value(_trackingCtrl.text.isNotEmpty
+                      ? _trackingCtrl.text.trim()
+                      : null),
+                  platformFeeRate: Value(sale.platformFeeRate),
+                ),
+              );
+        }
+
+        if (_trackingCtrl.text.trim().isNotEmpty) {
+          await ref.read(subRecordDaoProvider).addShipment(
+                ShipmentsCompanion(
+                  id: Value(uuid.v4()),
+                  itemId: Value(item.id),
+                  seq: const Value(0),
+                  trackingNumber: Value(_trackingCtrl.text.trim()),
+                  outgoingDate: Value(_shipDate),
+                  platform: Value(sale?.platform),
+                  createdAt: Value(DateTime.now().toIso8601String()),
+                ),
+              );
+        }
+
+        await ref.read(itemDaoProvider).updateStatus(item.id, 'OUTGOING',
+            note: '일괄 발송 (${NumberFormat('#,###').format(sellPrice)}원)');
+        successCount++;
+      } catch (_) {
+        failureCount++;
       }
-
-      if (_trackingCtrl.text.trim().isNotEmpty) {
-        await ref.read(subRecordDaoProvider).addShipment(
-              ShipmentsCompanion(
-                id: Value(uuid.v4()),
-                itemId: Value(item.id),
-                seq: const Value(0),
-                trackingNumber: Value(_trackingCtrl.text.trim()),
-                outgoingDate: Value(_shipDate),
-                platform: Value(sale?.platform),
-                createdAt: Value(DateTime.now().toIso8601String()),
-              ),
-            );
-      }
-
-      await ref.read(itemDaoProvider).updateStatus(item.id, 'OUTGOING',
-          note: '일괄 발송 (${NumberFormat('#,###').format(sellPrice)}원)');
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${widget.items.length}건 발송 완료')),
-      );
-      Navigator.pop(context, true);
+      final msg = failureCount == 0
+          ? '${widget.items.length}건 발송 완료'
+          : successCount > 0
+              ? '$successCount건 완료, $failureCount건 실패'
+              : '$failureCount건 처리 실패';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      Navigator.pop(context, successCount > 0);
     }
   }
 }
