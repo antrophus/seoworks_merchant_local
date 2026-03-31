@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analytics Screen Mockup — Seoworks Merchant</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1a2e;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 40px 20px;
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    gap: 48px;
+    flex-wrap: wrap;
+  }
+
+  .scene-label {
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+
+  /* ── Phone Frame ── */
+  .phone {
+    width: 375px;
+    background: #F8FAFC;
+    border-radius: 40px;
+    overflow: hidden;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.5), 0 0 0 2px #334155;
+    position: relative;
+  }
+  .phone.dark { background: #0F172A; }
+
+  /* Status bar */
+  .status-bar {
+    height: 44px;
+    background: #F8FAFC;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1e293b;
+  }
+  .phone.dark .status-bar { background: #0F172A; color: #e2e8f0; }
+  .status-right { display: flex; gap: 6px; align-items: center; }
+  .status-right span { font-size: 11px; }
+
+  /* AppBar */
+  .appbar {
+    height: 52px;
+    background: #F8FAFC;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .phone.dark .appbar { background: #0F172A; border-color: #1e293b; }
+  .appbar-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0f172a;
+    flex: 1;
+  }
+  .phone.dark .appbar-title { color: #f1f5f9; }
+  .appbar-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .phone.dark .appbar-icon { background: #1e293b; }
+
+  /* Scroll body */
+  .scroll-body {
+    height: 740px;
+    overflow-y: auto;
+    background: #f1f5f9;
+    scrollbar-width: none;
+  }
+  .scroll-body::-webkit-scrollbar { display: none; }
+  .phone.dark .scroll-body { background: #0d1117; }
+
+  /* Filter chips */
+  .filter-bar {
+    background: #F8FAFC;
+    padding: 10px 16px;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid #e2e8f0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .phone.dark .filter-bar { background: #0F172A; border-color: #1e293b; }
+  .filter-bar::-webkit-scrollbar { display: none; }
+  .chip {
+    height: 32px;
+    padding: 0 14px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    display: flex; align-items: center;
+    border: 1.5px solid #cbd5e1;
+    color: #64748b;
+    background: transparent;
+    transition: all 0.15s;
+  }
+  .chip.active {
+    background: #2563EB;
+    border-color: #2563EB;
+    color: #fff;
+  }
+  .phone.dark .chip { border-color: #334155; color: #94a3b8; }
+  .phone.dark .chip.active { background: #2563EB; border-color: #2563EB; color: #fff; }
+
+  /* Page content padding */
+  .page-content { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* KPI grid */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .kpi-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px 14px;
+    border: 1px solid #e2e8f0;
+  }
+  .phone.dark .kpi-card { background: #1e293b; border-color: #334155; }
+  .kpi-label {
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+  .kpi-value {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+  .phone.dark .kpi-value { color: #f1f5f9; }
+  .kpi-delta {
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 3px;
+    display: flex; align-items: center; gap: 2px;
+  }
+  .kpi-delta.up { color: #10b981; }
+  .kpi-delta.down { color: #ef4444; }
+  .kpi-value.accent { color: #2563EB; }
+  .kpi-value.success { color: #10b981; }
+  .kpi-value.warning { color: #f59e0b; }
+
+  /* Section header */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .phone.dark .section-title { color: #f1f5f9; }
+  .section-badge {
+    font-size: 10px;
+    color: #94a3b8;
+    font-weight: 500;
+  }
+
+  /* Chart card */
+  .chart-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 14px;
+    border: 1px solid #e2e8f0;
+  }
+  .phone.dark .chart-card { background: #1e293b; border-color: #334155; }
+
+  /* Bar+Line combo chart */
+  .chart-area {
+    height: 140px;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 8px 0 24px;
+    position: relative;
+  }
+  .chart-gridlines {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 24px;
+    display: flex; flex-direction: column; justify-content: space-between;
+    pointer-events: none;
+  }
+  .chart-gridline {
+    border-top: 1px dashed #e2e8f0;
+    width: 100%;
+  }
+  .phone.dark .chart-gridline { border-color: #334155; }
+  .bar-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    position: relative;
+  }
+  .bar-wrap {
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    height: 100px;
+  }
+  .bar {
+    width: 18px;
+    border-radius: 3px 3px 0 0;
+    background: #bfdbfe;
+    position: relative;
+  }
+  .bar.highlight { background: #2563EB; }
+  .bar-label {
+    font-size: 9px;
+    color: #94a3b8;
+    text-align: center;
+  }
+  /* SVG line overlay */
+  .chart-line-svg {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 108px;
+    pointer-events: none;
+  }
+
+  /* Legend */
+  .chart-legend {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #64748b;
+  }
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 2px;
+  }
+  .legend-line {
+    width: 16px; height: 2px;
+    border-radius: 1px;
+  }
+
+  /* Horizontal bar chart */
+  .hbar-list { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  .hbar-row { display: flex; flex-direction: column; gap: 3px; }
+  .hbar-top { display: flex; justify-content: space-between; font-size: 11px; }
+  .hbar-name { color: #374151; font-weight: 600; }
+  .phone.dark .hbar-name { color: #e2e8f0; }
+  .hbar-pct { color: #64748b; font-weight: 500; }
+  .hbar-track {
+    height: 7px;
+    background: #f1f5f9;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .phone.dark .hbar-track { background: #0d1117; }
+  .hbar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #2563EB, #60a5fa);
+  }
+
+  /* Top models tab */
+  .tab-row {
+    display: flex;
+    background: #f1f5f9;
+    border-radius: 10px;
+    padding: 3px;
+    margin-bottom: 10px;
+  }
+  .phone.dark .tab-row { background: #0d1117; }
+  .tab-btn {
+    flex: 1;
+    height: 32px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: #94a3b8;
+    transition: all 0.15s;
+  }
+  .tab-btn.active {
+    background: #fff;
+    color: #0f172a;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .phone.dark .tab-btn.active { background: #1e293b; color: #f1f5f9; }
+
+  /* Ranking card */
+  .rank-card {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    margin-bottom: 8px;
+    transition: box-shadow 0.2s;
+  }
+  .phone.dark .rank-card { background: #1e293b; border-color: #334155; }
+  .rank-card.expanded {
+    box-shadow: 0 4px 16px rgba(37,99,235,0.12);
+    border-color: #bfdbfe;
+  }
+  .phone.dark .rank-card.expanded { border-color: #1d4ed8; }
+
+  .rank-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 14px;
+    gap: 10px;
+    cursor: pointer;
+  }
+
+  /* Rank badge */
+  .rank-badge {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #fff; }
+  .rank-2 { background: linear-gradient(135deg, #94a3b8, #64748b); color: #fff; }
+  .rank-3 { background: linear-gradient(135deg, #cd7c3a, #a85f28); color: #fff; }
+  .rank-n { background: #f1f5f9; color: #64748b; font-size: 10px; }
+  .phone.dark .rank-n { background: #334155; color: #94a3b8; }
+
+  .rank-info { flex: 1; min-width: 0; }
+  .rank-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .phone.dark .rank-name { color: #f1f5f9; }
+  .rank-sub {
+    font-size: 10px;
+    color: #94a3b8;
+    margin-top: 1px;
+  }
+
+  .rank-profit { text-align: right; flex-shrink: 0; }
+  .rank-profit-amount {
+    font-size: 13px;
+    font-weight: 700;
+    color: #10b981;
+    font-variant-numeric: tabular-nums;
+  }
+  .rank-profit-amount.negative { color: #ef4444; }
+  .rank-margin {
+    font-size: 10px;
+    color: #94a3b8;
+    margin-top: 1px;
+    text-align: right;
+  }
+
+  .rank-chevron {
+    font-size: 12px;
+    color: #94a3b8;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  .rank-card.expanded .rank-chevron { transform: rotate(180deg); }
+
+  /* Expanded content */
+  .rank-expand {
+    border-top: 1px solid #f1f5f9;
+    background: #fafbff;
+    display: none;
+  }
+  .phone.dark .rank-expand { background: #151f2e; border-color: #334155; }
+  .rank-card.expanded .rank-expand { display: block; }
+
+  /* Model summary bar */
+  .model-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .phone.dark .model-summary { background: #334155; border-color: #334155; }
+  .model-stat {
+    background: #fafbff;
+    padding: 8px 10px;
+    text-align: center;
+  }
+  .phone.dark .model-stat { background: #151f2e; }
+  .model-stat-label { font-size: 9px; color: #94a3b8; font-weight: 500; }
+  .model-stat-value { font-size: 12px; font-weight: 700; color: #0f172a; margin-top: 1px; }
+  .phone.dark .model-stat-value { color: #e2e8f0; }
+
+  /* Sales records */
+  .sales-list-header {
+    display: grid;
+    grid-template-columns: 55px 35px 1fr 60px 55px;
+    gap: 4px;
+    padding: 6px 14px;
+    background: #f1f5f9;
+    font-size: 9px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .phone.dark .sales-list-header { background: #0d1117; }
+
+  .sales-record {
+    display: grid;
+    grid-template-columns: 55px 35px 1fr 60px 55px;
+    gap: 4px;
+    padding: 8px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    align-items: center;
+    font-size: 10px;
+  }
+  .phone.dark .sales-record { border-color: #1e293b; }
+  .sales-record:last-child { border-bottom: none; }
+  .sr-date { color: #94a3b8; font-size: 9px; }
+  .sr-size {
+    font-size: 10px;
+    font-weight: 600;
+    color: #374151;
+    text-align: center;
+  }
+  .phone.dark .sr-size { color: #e2e8f0; }
+  .sr-platform {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    padding: 0 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    background: #fee2e2;
+    color: #dc2626;
+    width: fit-content;
+  }
+  .sr-price {
+    font-size: 10px;
+    font-weight: 600;
+    color: #374151;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .phone.dark .sr-price { color: #e2e8f0; }
+  .sr-profit {
+    font-size: 10px;
+    font-weight: 700;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .sr-profit.pos { color: #10b981; }
+  .sr-profit.neg { color: #ef4444; }
+
+  /* View more button */
+  .view-more {
+    text-align: center;
+    padding: 8px;
+    font-size: 11px;
+    color: #2563EB;
+    font-weight: 600;
+    cursor: pointer;
+    border-top: 1px solid #f1f5f9;
+  }
+  .phone.dark .view-more { border-color: #1e293b; }
+
+  /* Bottom spacer */
+  .bottom-space { height: 32px; }
+
+  /* Divider label */
+  .divider-label {
+    font-size: 10px;
+    color: #94a3b8;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 0;
+  }
+  .divider-label::before, .divider-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e2e8f0;
+  }
+  .phone.dark .divider-label::before, .phone.dark .divider-label::after { background: #334155; }
+
+  /* Annotation arrows */
+  .annotation {
+    position: absolute;
+    font-size: 10px;
+    color: #f59e0b;
+    font-weight: 600;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── SCENE 1: Collapsed State (Light) ── -->
+<div>
+  <div class="scene-label">① 기본 상태 (Light Mode)</div>
+  <div class="phone">
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <span>11:35</span>
+      <div class="status-right"><span>🔋</span><span>WiFi</span></div>
+    </div>
+    <!-- AppBar -->
+    <div class="appbar">
+      <div class="appbar-title">분석</div>
+      <div class="appbar-icon">↗</div>
+    </div>
+    <!-- Filter chips (sticky) -->
+    <div class="filter-bar">
+      <div class="chip">이번달</div>
+      <div class="chip active">올해</div>
+      <div class="chip">전체</div>
+      <div class="chip">직접선택</div>
+    </div>
+    <!-- Scroll body -->
+    <div class="scroll-body">
+      <div class="page-content">
+
+        <!-- KPI 2×3 -->
+        <div>
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label">총 판매액</div>
+              <div class="kpi-value accent">89,448,318</div>
+              <div class="kpi-delta up">▲ +12.3% 전년대비</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">정산 금액</div>
+              <div class="kpi-value success">75,234,460</div>
+              <div class="kpi-delta up">▲ +8.7%</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">순이익</div>
+              <div class="kpi-value success">7,893,317</div>
+              <div class="kpi-delta down">▼ -2.1%</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">마진율</div>
+              <div class="kpi-value warning">11.7%</div>
+              <div class="kpi-delta down">▼ -1.2%p</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">판매 건수</div>
+              <div class="kpi-value">915건</div>
+              <div class="kpi-delta up">▲ +134건</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">평균 단가</div>
+              <div class="kpi-value">97,756원</div>
+              <div class="kpi-delta down">▼ -5,230원</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 월별 트렌드 -->
+        <div class="chart-card">
+          <div class="section-header">
+            <div class="section-title">월별 매출 · 이익</div>
+            <div class="section-badge">막대=매출 · 선=이익</div>
+          </div>
+          <div class="chart-area">
+            <div class="chart-gridlines">
+              <div class="chart-gridline"></div>
+              <div class="chart-gridline"></div>
+              <div class="chart-gridline"></div>
+              <div class="chart-gridline"></div>
+            </div>
+            <!-- Bars -->
+            <div class="bar-group">
+              <div class="bar-wrap"><div class="bar" style="height:48px"></div></div>
+              <div class="bar-label">08</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-wrap"><div class="bar" style="height:55px"></div></div>
+              <div class="bar-label">09</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-wrap"><div class="bar" style="height:62px"></div></div>
+              <div class="bar-label">10</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-wrap"><div class="bar" style="height:70px"></div></div>
+              <div class="bar-label">11</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-wrap"><div class="bar" style="height:82px"></div></div>
+              <div class="bar-label">12</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-wrap"><div class="bar" style="height:60px"></div></div>
+              <div class="bar-label">01</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-wrap"><div class="bar" style="height:75px"></div></div>
+              <div class="bar-label">02</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-wrap"><div class="bar highlight" style="height:95px"></div></div>
+              <div class="bar-label" style="color:#2563EB;font-weight:700">03</div>
+            </div>
+            <!-- SVG line for profit -->
+            <svg class="chart-line-svg" viewBox="0 0 343 108" preserveAspectRatio="none">
+              <polyline
+                points="21,78 64,72 107,66 150,57 193,44 236,62 279,50 322,30"
+                fill="none" stroke="#10b981" stroke-width="2" stroke-linejoin="round"
+              />
+              <circle cx="21" cy="78" r="3" fill="#10b981"/>
+              <circle cx="64" cy="72" r="3" fill="#10b981"/>
+              <circle cx="107" cy="66" r="3" fill="#10b981"/>
+              <circle cx="150" cy="57" r="3" fill="#10b981"/>
+              <circle cx="193" cy="44" r="3" fill="#10b981"/>
+              <circle cx="236" cy="62" r="3" fill="#10b981"/>
+              <circle cx="279" cy="50" r="3" fill="#10b981"/>
+              <circle cx="322" cy="30" r="5" fill="#10b981" stroke="#fff" stroke-width="1.5"/>
+            </svg>
+          </div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#bfdbfe"></div>
+              <span>매출</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-line" style="background:#10b981"></div>
+              <span>이익</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 브랜드별 매출 -->
+        <div class="chart-card">
+          <div class="section-header">
+            <div class="section-title">브랜드별 수익 비중</div>
+            <div class="section-badge">올해 기준</div>
+          </div>
+          <div class="hbar-list">
+            <div class="hbar-row">
+              <div class="hbar-top">
+                <span class="hbar-name">나이키</span>
+                <span class="hbar-pct">42% · 3,315,000원</span>
+              </div>
+              <div class="hbar-track"><div class="hbar-fill" style="width:42%"></div></div>
+            </div>
+            <div class="hbar-row">
+              <div class="hbar-top">
+                <span class="hbar-name">뉴발란스</span>
+                <span class="hbar-pct">28% · 2,210,000원</span>
+              </div>
+              <div class="hbar-track"><div class="hbar-fill" style="width:28%;background:linear-gradient(90deg,#7c3aed,#a78bfa)"></div></div>
+            </div>
+            <div class="hbar-row">
+              <div class="hbar-top">
+                <span class="hbar-name">아디다스</span>
+                <span class="hbar-pct">18% · 1,420,000원</span>
+              </div>
+              <div class="hbar-track"><div class="hbar-fill" style="width:18%;background:linear-gradient(90deg,#0891b2,#38bdf8)"></div></div>
+            </div>
+            <div class="hbar-row">
+              <div class="hbar-top">
+                <span class="hbar-name">기타</span>
+                <span class="hbar-pct">12% · 947,000원</span>
+              </div>
+              <div class="hbar-track"><div class="hbar-fill" style="width:12%;background:linear-gradient(90deg,#94a3b8,#cbd5e1)"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top 모델 탭 -->
+        <div>
+          <div class="section-header">
+            <div class="section-title">모델별 수익 분석</div>
+          </div>
+          <div class="tab-row">
+            <div class="tab-btn active">🏆 수익 Top 10</div>
+            <div class="tab-btn">📉 손실 Top 10</div>
+          </div>
+
+          <!-- Rank 1 - collapsed -->
+          <div class="rank-card">
+            <div class="rank-header">
+              <div class="rank-badge rank-1">1</div>
+              <div class="rank-info">
+                <div class="rank-name">뉴발란스 509</div>
+                <div class="rank-sub">U30956 · 14건 판매</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount">+497,510원</div>
+                <div class="rank-margin">마진 18.2%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+          </div>
+
+          <!-- Rank 2 - collapsed -->
+          <div class="rank-card">
+            <div class="rank-header">
+              <div class="rank-badge rank-2">2</div>
+              <div class="rank-info">
+                <div class="rank-name">조던 1 레트로 하이 OW 더프 블루</div>
+                <div class="rank-sub">FV3110-100 · 2건</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount">+414,900원</div>
+                <div class="rank-margin">마진 22.5%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+          </div>
+
+          <!-- Rank 3 - collapsed -->
+          <div class="rank-card">
+            <div class="rank-header">
+              <div class="rank-badge rank-3">3</div>
+              <div class="rank-info">
+                <div class="rank-name">조던 3 레트로 조 서머셋</div>
+                <div class="rank-sub">DN3707-100 · 3건</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount">+297,900원</div>
+                <div class="rank-margin">마진 14.8%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+          </div>
+
+          <!-- Rank 4 -->
+          <div class="rank-card">
+            <div class="rank-header">
+              <div class="rank-badge rank-n">4</div>
+              <div class="rank-info">
+                <div class="rank-name">에어포스 1 로우 07</div>
+                <div class="rank-sub">CW2288-111 · 8건</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount">+231,200원</div>
+                <div class="rank-margin">마진 9.3%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bottom-space"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── SCENE 2: Expanded State (Light) ── -->
+<div>
+  <div class="scene-label">② 랭킹 카드 펼침 상태</div>
+  <div class="phone">
+    <div class="status-bar">
+      <span>11:35</span>
+      <div class="status-right"><span>🔋</span><span>WiFi</span></div>
+    </div>
+    <div class="appbar">
+      <div class="appbar-title">분석</div>
+      <div class="appbar-icon">↗</div>
+    </div>
+    <div class="filter-bar">
+      <div class="chip">이번달</div>
+      <div class="chip active">올해</div>
+      <div class="chip">전체</div>
+      <div class="chip">직접선택</div>
+    </div>
+    <div class="scroll-body">
+      <div class="page-content">
+
+        <!-- Tab -->
+        <div>
+          <div class="section-header">
+            <div class="section-title">모델별 수익 분석</div>
+          </div>
+          <div class="tab-row">
+            <div class="tab-btn active">🏆 수익 Top 10</div>
+            <div class="tab-btn">📉 손실 Top 10</div>
+          </div>
+
+          <!-- Rank 1 - EXPANDED -->
+          <div class="rank-card expanded">
+            <div class="rank-header">
+              <div class="rank-badge rank-1">1</div>
+              <div class="rank-info">
+                <div class="rank-name">뉴발란스 509</div>
+                <div class="rank-sub">U30956 · 14건 판매</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount">+497,510원</div>
+                <div class="rank-margin">마진 18.2%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+
+            <!-- Expanded content -->
+            <div class="rank-expand">
+              <!-- 모델 요약 통계 3칸 -->
+              <div class="model-summary">
+                <div class="model-stat">
+                  <div class="model-stat-label">총 매출</div>
+                  <div class="model-stat-value" style="color:#2563EB">2,730,000</div>
+                </div>
+                <div class="model-stat">
+                  <div class="model-stat-label">총 구매원가</div>
+                  <div class="model-stat-value">2,232,490</div>
+                </div>
+                <div class="model-stat">
+                  <div class="model-stat-label">평균 마진율</div>
+                  <div class="model-stat-value" style="color:#10b981">18.2%</div>
+                </div>
+              </div>
+
+              <!-- 판매 기록 헤더 -->
+              <div class="sales-list-header">
+                <span>날짜</span>
+                <span style="text-align:center">사이즈</span>
+                <span>플랫폼</span>
+                <span style="text-align:right">판매가</span>
+                <span style="text-align:right">이익</span>
+              </div>
+
+              <!-- 판매 기록들 -->
+              <div class="sales-record">
+                <span class="sr-date">03-28</span>
+                <span class="sr-size">265</span>
+                <span><span class="sr-platform">POIZON</span></span>
+                <span class="sr-price">195,000</span>
+                <span class="sr-profit pos">+35,650</span>
+              </div>
+              <div class="sales-record">
+                <span class="sr-date">03-25</span>
+                <span class="sr-size">270</span>
+                <span><span class="sr-platform">POIZON</span></span>
+                <span class="sr-price">195,000</span>
+                <span class="sr-profit pos">+38,200</span>
+              </div>
+              <div class="sales-record">
+                <span class="sr-date">03-22</span>
+                <span class="sr-size">260</span>
+                <span><span class="sr-platform">POIZON</span></span>
+                <span class="sr-price">185,000</span>
+                <span class="sr-profit pos">+29,800</span>
+              </div>
+              <div class="sales-record">
+                <span class="sr-date">03-19</span>
+                <span class="sr-size">275</span>
+                <span><span class="sr-platform">POIZON</span></span>
+                <span class="sr-price">200,000</span>
+                <span class="sr-profit pos">+41,000</span>
+              </div>
+              <div class="sales-record">
+                <span class="sr-date">03-14</span>
+                <span class="sr-size">265</span>
+                <span><span class="sr-platform">POIZON</span></span>
+                <span class="sr-price">190,000</span>
+                <span class="sr-profit pos">+33,500</span>
+              </div>
+
+              <div class="view-more">+ 9건 더 보기</div>
+            </div>
+          </div>
+
+          <!-- Rank 2 - collapsed -->
+          <div class="rank-card">
+            <div class="rank-header">
+              <div class="rank-badge rank-2">2</div>
+              <div class="rank-info">
+                <div class="rank-name">조던 1 레트로 하이 OW 더프 블루</div>
+                <div class="rank-sub">FV3110-100 · 2건</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount">+414,900원</div>
+                <div class="rank-margin">마진 22.5%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+          </div>
+
+          <!-- Rank 3 - collapsed -->
+          <div class="rank-card">
+            <div class="rank-header">
+              <div class="rank-badge rank-3">3</div>
+              <div class="rank-info">
+                <div class="rank-name">조던 3 레트로 조 서머셋</div>
+                <div class="rank-sub">DN3707-100 · 3건</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount">+297,900원</div>
+                <div class="rank-margin">마진 14.8%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+          </div>
+
+        </div>
+        <div class="bottom-space"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── SCENE 3: Dark Mode + Loss tab ── -->
+<div>
+  <div class="scene-label">③ 다크 모드 · 손실 탭</div>
+  <div class="phone dark">
+    <div class="status-bar">
+      <span>11:35</span>
+      <div class="status-right"><span>🔋</span><span>WiFi</span></div>
+    </div>
+    <div class="appbar">
+      <div class="appbar-title">분석</div>
+      <div class="appbar-icon" style="background:#1e293b;color:#94a3b8">↗</div>
+    </div>
+    <div class="filter-bar">
+      <div class="chip">이번달</div>
+      <div class="chip active">올해</div>
+      <div class="chip">전체</div>
+      <div class="chip">직접선택</div>
+    </div>
+    <div class="scroll-body">
+      <div class="page-content">
+
+        <!-- KPI -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">총 판매액</div>
+            <div class="kpi-value accent">89,448,318</div>
+            <div class="kpi-delta up">▲ +12.3%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">정산 금액</div>
+            <div class="kpi-value success">75,234,460</div>
+            <div class="kpi-delta up">▲ +8.7%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">순이익</div>
+            <div class="kpi-value success">7,893,317</div>
+            <div class="kpi-delta down">▼ -2.1%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">마진율</div>
+            <div class="kpi-value warning">11.7%</div>
+            <div class="kpi-delta down">▼ -1.2%p</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">판매 건수</div>
+            <div class="kpi-value" style="color:#e2e8f0">915건</div>
+            <div class="kpi-delta up">▲ +134건</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">평균 단가</div>
+            <div class="kpi-value" style="color:#e2e8f0">97,756원</div>
+            <div class="kpi-delta down">▼ -5,230원</div>
+          </div>
+        </div>
+
+        <!-- Top 모델 - 손실 탭 -->
+        <div>
+          <div class="section-header">
+            <div class="section-title">모델별 수익 분석</div>
+          </div>
+          <div class="tab-row">
+            <div class="tab-btn">🏆 수익 Top 10</div>
+            <div class="tab-btn active">📉 손실 Top 10</div>
+          </div>
+
+          <!-- Loss rank 1 - EXPANDED -->
+          <div class="rank-card expanded" style="border-color:#7f1d1d">
+            <div class="rank-header">
+              <div class="rank-badge rank-1" style="background:linear-gradient(135deg,#ef4444,#b91c1c)">1</div>
+              <div class="rank-info">
+                <div class="rank-name">에어맥스 97 실버 불렛</div>
+                <div class="rank-sub">DC4099-001 · 3건 판매</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount negative">-124,800원</div>
+                <div class="rank-margin">손실률 -8.9%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+            <div class="rank-expand" style="background:#1a0f0f">
+              <div class="model-summary" style="background:#7f1d1d">
+                <div class="model-stat" style="background:#1a0f0f">
+                  <div class="model-stat-label">총 매출</div>
+                  <div class="model-stat-value" style="color:#fca5a5">1,281,000</div>
+                </div>
+                <div class="model-stat" style="background:#1a0f0f">
+                  <div class="model-stat-label">총 구매원가</div>
+                  <div class="model-stat-value" style="color:#e2e8f0">1,405,800</div>
+                </div>
+                <div class="model-stat" style="background:#1a0f0f">
+                  <div class="model-stat-label">평균 손실률</div>
+                  <div class="model-stat-value" style="color:#ef4444">-8.9%</div>
+                </div>
+              </div>
+              <div class="sales-list-header" style="background:#12080a">
+                <span>날짜</span>
+                <span style="text-align:center">사이즈</span>
+                <span>플랫폼</span>
+                <span style="text-align:right">판매가</span>
+                <span style="text-align:right">이익</span>
+              </div>
+              <div class="sales-record" style="border-color:#2d1515">
+                <span class="sr-date" style="color:#6b7280">02-10</span>
+                <span class="sr-size">270</span>
+                <span><span class="sr-platform">POIZON</span></span>
+                <span class="sr-price">427,000</span>
+                <span class="sr-profit neg">-41,600</span>
+              </div>
+              <div class="sales-record" style="border-color:#2d1515">
+                <span class="sr-date" style="color:#6b7280">01-28</span>
+                <span class="sr-size">265</span>
+                <span><span class="sr-platform">POIZON</span></span>
+                <span class="sr-price">427,000</span>
+                <span class="sr-profit neg">-39,200</span>
+              </div>
+              <div class="sales-record" style="border-color:transparent">
+                <span class="sr-date" style="color:#6b7280">01-15</span>
+                <span class="sr-size">260</span>
+                <span><span class="sr-platform">POIZON</span></span>
+                <span class="sr-price">427,000</span>
+                <span class="sr-profit neg">-44,000</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Loss rank 2 -->
+          <div class="rank-card">
+            <div class="rank-header">
+              <div class="rank-badge rank-2">2</div>
+              <div class="rank-info">
+                <div class="rank-name">조던 4 레트로 레이지 온 더 무브</div>
+                <div class="rank-sub">AQ9129-100 · 2건</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount negative">-87,500원</div>
+                <div class="rank-margin">손실률 -6.2%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+          </div>
+
+          <!-- Loss rank 3 -->
+          <div class="rank-card">
+            <div class="rank-header">
+              <div class="rank-badge rank-3">3</div>
+              <div class="rank-info">
+                <div class="rank-name">덩크 로우 판다</div>
+                <div class="rank-sub">DD1391-100 · 5건</div>
+              </div>
+              <div class="rank-profit">
+                <div class="rank-profit-amount negative">-62,300원</div>
+                <div class="rank-margin">손실률 -3.8%</div>
+              </div>
+              <div class="rank-chevron">▼</div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-space"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

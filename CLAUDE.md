@@ -1,5 +1,41 @@
 # CLAUDE.md
 
+---
+
+## 배포 빠른 참조
+
+> 상세 내용: [`docs/배포-가이드.md`](docs/배포-가이드.md)
+
+### 릴리즈 APK 빌드
+
+```bash
+cd merchant_local
+flutter build apk --release
+# 결과: build/app/outputs/flutter-apk/app-release.apk
+```
+
+### APK 배포 (파일 전달 후 설치, 마켓 제외)
+
+1. **전달**: 카카오톡 파일 / Google Drive 링크 / USB 복사
+2. **설치**: 기기에서 APK 파일 열기 → "출처를 알 수 없는 앱 허용" → 설치
+3. **업데이트**: 동일 서명 키 APK로 덮어쓰기 설치 → 데이터 보존
+
+### 데이터 JSON 전달
+
+- **내보내기**: 앱 → 설정 → 데이터 내보내기 → JSON 백업 → 공유 시트로 전송
+- **가져오기**: 앱 → 설정 → 데이터 가져오기 → JSON 파일 선택
+- API 키는 JSON에 미포함 → 각 기기에서 직접 입력
+
+### 서명 키 (분실 금지 ⚠️)
+
+| 파일 | 경로 |
+|------|------|
+| 키스토어 | `merchant_local/android/app/upload-keystore.jks` |
+| 키 설정 | `merchant_local/android/key.properties` (git 제외) |
+| 비밀번호 | `seoworks2026` |
+
+---
+
 ## 프로젝트 정보
 - **프로젝트명**: Seoworks Merchant Local
 - **기술 스택**: Flutter + Dart + Drift + Google Drive Sync + CRDT

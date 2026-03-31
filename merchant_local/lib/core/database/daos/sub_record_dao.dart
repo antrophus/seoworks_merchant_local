@@ -1,5 +1,4 @@
 import 'package:drift/drift.dart';
-import 'package:uuid/uuid.dart';
 import '../app_database.dart';
 import '../tables/status_log_table.dart';
 import '../tables/inspection_rejection_table.dart';
@@ -12,7 +11,6 @@ import '../tables/poizon_sync_log_table.dart';
 
 part 'sub_record_dao.g.dart';
 
-const _uuid = Uuid();
 
 /// 부속 기록 DAO (상태로그, 검수반려, 수선, 배송, 반품, 취소, 샘플, 동기화로그)
 @DriftAccessor(tables: [

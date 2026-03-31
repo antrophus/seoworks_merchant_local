@@ -257,23 +257,27 @@ class _PurchasesScreenState extends ConsumerState<PurchasesScreen> {
                     _dateFmt.format(to);
                 ref.read(_purchaseLabelProvider.notifier).state = '지난달';
               } else if (v == 'custom') {
-                final range = await showDateRangePicker(
+                final start = await showDatePicker(
                   context: context,
+                  initialDate: DateTime(now.year, now.month, 1),
                   firstDate: DateTime(2020),
                   lastDate: DateTime(2030),
-                  initialDateRange: DateTimeRange(
-                    start: DateTime(now.year, 1, 1),
-                    end: now,
-                  ),
-                  locale: const Locale('ko'),
                 );
-                if (range != null) {
+                if (start == null) return;
+                if (!context.mounted) return;
+                final end = await showDatePicker(
+                  context: context,
+                  initialDate: now,
+                  firstDate: start,
+                  lastDate: DateTime(2030),
+                );
+                if (end != null) {
                   ref.read(_purchaseDateFromProvider.notifier).state =
-                      _dateFmt.format(range.start);
+                      _dateFmt.format(start);
                   ref.read(_purchaseDateToProvider.notifier).state =
-                      _dateFmt.format(range.end);
+                      _dateFmt.format(end);
                   ref.read(_purchaseLabelProvider.notifier).state =
-                      '${_dateFmt.format(range.start).substring(5)} ~ ${_dateFmt.format(range.end).substring(5)}';
+                      '${_dateFmt.format(start).substring(5)} ~ ${_dateFmt.format(end).substring(5)}';
                 }
               } else {
                 // year

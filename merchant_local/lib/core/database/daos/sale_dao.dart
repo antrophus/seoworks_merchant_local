@@ -454,4 +454,108 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       b.insertAll(saleAdjustments, entries, mode: InsertMode.insertOrIgnore);
     });
   }
+
+  /// 브랜드별 수익 Top N
+  Future<List<Map<String, dynamic>>> getBrandProfit({
+    int limit = 6,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    var where = '';
+    final vars = <Variable>[];
+    if (dateFrom != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) >= ?";
+      vars.add(Variable.withString(dateFrom));
+    }
+    if (dateTo != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) <= ?";
+      vars.add(Variable.withString(dateTo));
+    }
+    vars.add(Variable.withInt(limit));
+
+    final results = await customSelect(
+      '''
+      SELECT
+        COALESCE(b.name, '기타') AS brand_name,
+        COUNT(*) AS cnt,
+        COALESCE(SUM(s.sell_price), 0) AS sell_total,
+        COALESCE(SUM(s.settlement_amount - COALESCE(p.purchase_price, 0)), 0) AS profit
+      FROM sales s
+      JOIN items i ON i.id = s.item_id
+      JOIN products pr ON pr.id = i.product_id
+      LEFT JOIN brands b ON b.id = pr.brand_id
+      LEFT JOIN purchases p ON p.item_id = s.item_id
+      WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
+        AND s.settlement_amount IS NOT NULL
+      $where
+      GROUP BY brand_name
+      ORDER BY profit DESC
+      LIMIT ?
+      ''',
+      variables: vars,
+      readsFrom: {sales, items, products},
+    ).get();
+
+    return results.map((r) => {
+          'brandName': r.read<String>('brand_name'),
+          'count': r.read<int>('cnt'),
+          'sellTotal': r.read<int>('sell_total'),
+          'profit': r.read<int>('profit'),
+        }).toList();
+  }
+
+  /// 특정 모델의 건별 판매 기록
+  Future<List<Map<String, dynamic>>> getSalesByModelCode(
+    String modelCode, {
+    String? dateFrom,
+    String? dateTo,
+    int limit = 30,
+  }) async {
+    var where = '';
+    final vars = <Variable>[Variable.withString(modelCode)];
+    if (dateFrom != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) >= ?";
+      vars.add(Variable.withString(dateFrom));
+    }
+    if (dateTo != null) {
+      where += " AND COALESCE(s.settled_at, s.sale_date) <= ?";
+      vars.add(Variable.withString(dateTo));
+    }
+    vars.add(Variable.withInt(limit));
+
+    final results = await customSelect(
+      '''
+      SELECT
+        COALESCE(s.settled_at, s.sale_date) AS date,
+        i.size_kr,
+        s.platform,
+        s.sell_price,
+        s.settlement_amount,
+        COALESCE(p.purchase_price, 0) AS purchase_price,
+        (s.settlement_amount - COALESCE(p.purchase_price, 0)) AS profit
+      FROM sales s
+      JOIN items i ON i.id = s.item_id
+      JOIN products pr ON pr.id = i.product_id
+      LEFT JOIN purchases p ON p.item_id = s.item_id
+      WHERE pr.model_code = ?
+        AND i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
+        AND s.settlement_amount IS NOT NULL
+      $where
+      ORDER BY date DESC
+      LIMIT ?
+      ''',
+      variables: vars,
+      readsFrom: {sales, items, products},
+    ).get();
+
+    return results.map((r) => {
+          'date': r.read<String?>('date') ?? '',
+          'sizeKr': r.read<String?>('size_kr') ?? '',
+          'platform': r.read<String?>('platform') ?? '',
+          'sellPrice': r.read<int?>('sell_price') ?? 0,
+          'settlementAmount': r.read<int?>('settlement_amount') ?? 0,
+          'purchasePrice': r.read<int>('purchase_price'),
+          'profit': r.read<int?>('profit') ?? 0,
+        }).toList();
+  }
 }
