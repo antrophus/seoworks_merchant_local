@@ -88,6 +88,7 @@ UI 구조, 시각 디자인, 컴포넌트, 레이아웃, 색상, 타이포그래
 | 작업일지 | `docs/작업일지.md` |
 | PRD | `docs/PRD.md` |
 | 기술 아키텍처 | `docs/architecture.md` |
+| Google Drive 동기화 가이드 | `merchant_local/docs/google-drive-sync-guide.md` |
 
 ---
 
@@ -127,9 +128,17 @@ UI 구조, 시각 디자인, 컴포넌트, 레이아웃, 색상, 타이포그래
 - [x] 입고 등록: model_code UNIQUE 제약 에러 → 저장 전 중복 체크
 - [x] 브랜드 선택: 검색 시트 + 최근 선택 칩 핀 기능 추가
 
+### 완료된 작업 (2026-03-31) — Google Drive 동기화 설계
+- [x] Google Drive 동기화 구현 가이드 작성 (`merchant_local/docs/google-drive-sync-guide.md`)
+- [x] 동기화 아키텍처 결정: 동일 계정 방식 + appDataFolder + CRDT(HLC) 충돌 해결
+- [x] DB 마이그레이션 v4→v5 계획 (16개 테이블에 hlc + isDeleted 추가)
+- [x] migration plan Sprint 5 섹션 업데이트
+
 ### 다음 세션 작업
-- **Phase 2-C**: 캘린더 뷰, Google Drive 동기화, 기타 UI 개선
-- **잔여 이슈**: INV-09 재고 위치별 탭 미구현(🔶), 이미지 저장 로직 확인
+- **Phase 3 (Google Drive 동기화)**: `merchant_local/docs/google-drive-sync-guide.md` 참조
+  - 사전 준비: Google Cloud Console OAuth 설정 + `google-services.json` 필요
+  - 구현 순서: Phase 3-1(DB 마이그레이션) → 3-2(HlcClock) → 3-3(DAO 수정) → 3-4(Drive Service) → 3-5(SyncEngine) → 3-6(UI) → 3-7(자동 동기화)
+- **잔여 이슈**: INV-09 재고 위치별 탭 미구현, 캘린더 뷰(CAL-01~03), 이미지 저장 로직 확인
 - 상세: `merchant_local/docs/web-to-local-migration-plan.md` 참조
 
 ### 설치된 도구 (전역)

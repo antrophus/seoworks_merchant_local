@@ -242,7 +242,7 @@
 
 | 기능 | 로컬앱 | 비고 |
 |------|--------|------|
-| Google Drive 동기화 | ❌ | SyncMeta 테이블 준비됨, CRDT HLC 지원, 실제 동기화 미구현 |
+| Google Drive 동기화 | ❌ | SyncMeta 테이블 준비됨, CRDT HLC 지원, 실제 동기화 미구현 → 구현 가이드: [`google-drive-sync-guide.md`](google-drive-sync-guide.md) |
 | 데이터 백업/내보내기 | ✅ | Phase 2-B 완료: JSON 전체/판매 CSV/재고 CSV 내보내기 (설정 화면) |
 | 오프라인 동작 | ✅ | 로컬 SQLite 기반 완전 오프라인 |
 
@@ -531,13 +531,23 @@ Phase 2-C (선택)    약 3개 태스크
 
 ### 스프린트 5: Google Drive 동기화 (가장 복잡)
 
+> **상세 구현 가이드**: [`google-drive-sync-guide.md`](google-drive-sync-guide.md)
+
 | # | 태스크 | 복잡도 | 비고 |
 |---|--------|--------|------|
-| 1 | Google Sign-In 인증 | 중 | `google_sign_in` 이미 의존성에 있음 |
-| 2 | CRDT HLC 충돌 해결 로직 | 높 | `crdt` 패키지 이미 의존성에 있음 |
-| 3 | SQLite → JSON → Drive 업로드 | 중 | `googleapis` 이미 의존성에 있음 |
-| 4 | Drive → JSON → SQLite 머지 | 높 | SyncMeta 테이블 활용 |
-| 5 | 자동/수동 동기화 UI | 낮 | 설정 화면에 추가 |
+| 1 | Phase 3-1: DB 마이그레이션 v4→v5 | 중 | 16개 테이블에 `hlc`+`isDeleted` 추가, HLC 백필 |
+| 2 | Phase 3-2: HlcClockService | 중 | 디바이스별 고유 HLC 시계, `crdt` 패키지 활용 |
+| 3 | Phase 3-3: DAO 수정 (HLC + soft delete) | 높 | 5개 DAO 전체 수정, raw SQL 쿼리 isDeleted 필터 |
+| 4 | Phase 3-4: GoogleDriveService | 중 | OAuth 인증, appDataFolder 파일 관리, Windows 폴백 |
+| 5 | Phase 3-5: SyncEngine (핵심) | 높 | CRDT 머지 알고리즘, FK 의존성 순서, manifest 관리 |
+| 6 | Phase 3-6: UI (Settings + AppBar) | 낮 | Google 로그인, 동기화 상태, 수동/자동 동기화 |
+| 7 | Phase 3-7: SyncScheduler | 낮 | Timer.periodic 기반 자동 동기화 |
+
+**사전 준비 (구현 전 필수):**
+- [ ] Google Cloud Console 프로젝트 생성 + Drive API 활성화
+- [ ] OAuth 2.0 클라이언트 ID 생성 (Android SHA-1 + 패키지명)
+- [ ] `google-services.json` → `android/app/` 배치
+- [ ] `extension_google_sign_in_as_googleapis_auth` 패키지 추가
 
 ### 잔여 이슈 (우선순위 낮음)
 - **상품 이미지 로컬 저장** — QR 스캔으로 가져온 상품 이미지의 로컬 캐시 저장 여부 확인 필요
