@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter build apk*)",
+      "Bash(flutter pub get)",
+      "Bash(flutter pub upgrade*)",
+      "Bash(dart run build_runner*)",
+      "Bash(dart format*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git status)"
+    ]
+  }
+}
