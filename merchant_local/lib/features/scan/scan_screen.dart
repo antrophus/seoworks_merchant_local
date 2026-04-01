@@ -7,7 +7,9 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
+import 'dart:math' show min, max;
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:drift/drift.dart' show Value;
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
 import '../../core/services/llm_router.dart';
@@ -74,9 +76,8 @@ class _BarcodeScanTab extends ConsumerStatefulWidget {
 class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
   MobileScannerController? _scannerCtrl;
   String? _lastBarcode;
-  ItemData? _foundItem;
   bool _searching = false;
-  bool _notFound = false;
+  bool _showingSheet = false;
 
   // 연속스캔 모드
   bool _continuousMode = false;
@@ -106,7 +107,7 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
   }
 
   Future<void> _onBarcodeDetected(String barcode) async {
-    if (_searching) return;
+    if (_searching || _showingSheet) return;
 
     if (_continuousMode) {
       // 연속스캔: 중복 방지 후 장바구니에 추가
@@ -133,28 +134,63 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
     // 단일 스캔 모드
     if (barcode == _lastBarcode) return;
     _lastBarcode = barcode;
-    setState(() {
-      _searching = true;
-      _notFound = false;
-      _foundItem = null;
-    });
+    setState(() => _searching = true);
 
     final item = await ref.read(itemDaoProvider).getByBarcode(barcode);
-    if (mounted) {
-      setState(() {
-        _searching = false;
-        _foundItem = item;
-        _notFound = item == null;
-      });
+    if (!mounted) return;
+    setState(() => _searching = false);
+
+    _scannerCtrl?.stop();
+    _showingSheet = true;
+    await _showResultSheet(barcode, item);
+  }
+
+  Future<void> _showResultSheet(String barcode, ItemData? item) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => item != null
+          ? _BarcodeFoundSheet(
+              barcode: barcode,
+              item: item,
+            )
+          : _BarcodeNotFoundSheet(barcode: barcode),
+    );
+
+    _showingSheet = false;
+    _lastBarcode = null;
+
+    if (action == 'detail' && mounted) {
+      await context.push('/item/${item!.id}');
+      if (mounted) _scannerCtrl?.start();
+    } else if (action == 'register' && mounted) {
+      await context.push('/register');
+      if (mounted) _scannerCtrl?.start();
+    } else if (action == 'link' && mounted) {
+      final linked = await _showBarcodeLinkSheet(barcode);
+      if (mounted) {
+        if (linked == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('바코드가 연결되었습니다')),
+          );
+        }
+        _scannerCtrl?.start();
+      }
+    } else {
+      // 다시 스캔 또는 시트 닫기 → 스캐너 재개
+      _scannerCtrl?.start();
     }
   }
 
-  void _resetScan() {
-    setState(() {
-      _lastBarcode = null;
-      _foundItem = null;
-      _notFound = false;
-    });
+  Future<bool?> _showBarcodeLinkSheet(String barcode) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _BarcodeLinkSheet(barcode: barcode),
+    );
   }
 
   void _clearBucket() {
@@ -194,32 +230,30 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
   Widget build(BuildContext context) {
     if (!_isMobile) {
       // Windows/데스크톱: 카메라 없음 → 수동 바코드 입력
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                const Icon(Icons.desktop_windows, size: 48, color: Colors.grey),
-                const SizedBox(height: 8),
-                const Text('데스크톱에서는 카메라 스캔을 사용할 수 없습니다.',
-                    style: TextStyle(color: Colors.grey)),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: '바코드 직접 입력',
-                    prefixIcon: Icon(Icons.keyboard),
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (v) {
-                    if (v.trim().isNotEmpty) _onBarcodeDetected(v.trim());
-                  },
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.desktop_windows, size: 48, color: Colors.grey),
+              const SizedBox(height: 8),
+              const Text('데스크톱에서는 카메라 스캔을 사용할 수 없습니다.',
+                  style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 16),
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: '바코드 직접 입력',
+                  prefixIcon: Icon(Icons.keyboard),
+                  border: OutlineInputBorder(),
                 ),
-              ],
-            ),
+                onSubmitted: (v) {
+                  if (v.trim().isNotEmpty) _onBarcodeDetected(v.trim());
+                },
+              ),
+            ],
           ),
-          Expanded(child: _buildResult()),
-        ],
+        ),
       );
     }
 
@@ -288,6 +322,9 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
                   ),
                 ),
               ),
+              // 스캔 중 인디케이터
+              if (_searching)
+                const Center(child: CircularProgressIndicator(color: Colors.white)),
               Positioned(
                 bottom: 16,
                 left: 0,
@@ -311,54 +348,14 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
           ),
         ),
 
-        // 연속스캔 장바구니 or 단일 결과
-        Expanded(
-          flex: 2,
-          child: _continuousMode ? _buildBucket() : _buildResult(),
-        ),
+        // 연속스캔 장바구니
+        if (_continuousMode)
+          Expanded(
+            flex: 2,
+            child: _buildBucket(),
+          ),
       ],
     );
-  }
-
-  Widget _buildResult() {
-    if (_searching) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_lastBarcode == null) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.qr_code_scanner, size: 48, color: Colors.grey),
-            SizedBox(height: 8),
-            Text('바코드를 스캔하세요', style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      );
-    }
-
-    // 바코드 찾음
-    if (_foundItem != null) {
-      return _BarcodeFoundCard(
-        barcode: _lastBarcode!,
-        item: _foundItem!,
-        onReset: _resetScan,
-      );
-    }
-
-    // 바코드 미등록
-    if (_notFound) {
-      return _BarcodeNotFoundCard(
-        barcode: _lastBarcode!,
-        onReset: _resetScan,
-        onRegister: () {
-          context.push('/register');
-        },
-      );
-    }
-
-    return const SizedBox.shrink();
   }
 
   Widget _buildBucket() {
@@ -430,144 +427,620 @@ class _BarcodeScanTabState extends ConsumerState<_BarcodeScanTab> {
   }
 }
 
-class _BarcodeFoundCard extends ConsumerWidget {
+class _BarcodeFoundSheet extends ConsumerWidget {
   final String barcode;
   final ItemData item;
-  final VoidCallback onReset;
 
-  const _BarcodeFoundCard({
+  const _BarcodeFoundSheet({
     required this.barcode,
     required this.item,
-    required this.onReset,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final productAsync =
-        ref.watch(_productForScanProvider(item.productId));
-    final purchaseAsync =
-        ref.watch(_purchaseForScanProvider(item.id));
+    final productAsync = ref.watch(_productForScanProvider(item.productId));
+    final stockListAsync = ref.watch(_modelSizeStockProvider(
+        (productId: item.productId, sizeKr: item.sizeKr)));
+    final bottomPad = MediaQuery.of(context).padding.bottom;
 
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.green),
-                  const SizedBox(width: 8),
-                  Text('바코드: $barcode',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                ],
+    return Container(
+      constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.82),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 드래그 핸들
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(top: 12, bottom: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
               ),
-              const Divider(),
-              Text('SKU: ${item.sku}',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-              Text(
-                  '사이즈: ${item.sizeKr}${item.sizeEu != null ? " / EU ${item.sizeEu}" : ""}'),
-              Text('상태: ${_statusLabel(item.currentStatus)}'),
-              productAsync.when(
-                data: (p) => p != null
-                    ? Text('모델: ${p.modelName} (${p.modelCode})')
-                    : const SizedBox.shrink(),
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
-              ),
-              purchaseAsync.when(
-                data: (p) => p?.purchasePrice != null
-                    ? Text(
-                        '매입가: ${NumberFormat('#,###').format(p!.purchasePrice)}원')
-                    : const SizedBox.shrink(),
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: onReset,
-                      child: const Text('다시 스캔'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: () =>
-                          context.push('/item/${item.id}'),
-                      child: const Text('상세 보기'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding:
+                  EdgeInsets.fromLTRB(20, 8, 20, 16 + bottomPad),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 헤더: 모델명 + 사이즈
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.check_circle,
+                          color: Colors.green, size: 24),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: productAsync.when(
+                          data: (p) => p != null
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(p.modelName,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16)),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                        '${p.modelCode}  ·  KR ${item.sizeKr}${item.sizeEu != null ? " / EU ${item.sizeEu}" : ""}',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey.shade600)),
+                                  ],
+                                )
+                              : Text('KR ${item.sizeKr}',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16)),
+                          loading: () => Text('KR ${item.sizeKr}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16)),
+                          error: (_, __) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+
+                  stockListAsync.when(
+                    loading: () => const Center(
+                        child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(),
+                    )),
+                    error: (_, __) => const SizedBox.shrink(),
+                    data: (list) {
+                      // 판매 가능 재고 (리스팅, 포이즌보관만)
+                      const activeStatuses = {'LISTED', 'POIZON_STORAGE'};
+                      final activeGroups = <String, int>{};
+                      for (final info in list) {
+                        if (activeStatuses.contains(info.item.currentStatus)) {
+                          activeGroups[info.item.currentStatus] =
+                              (activeGroups[info.item.currentStatus] ?? 0) + 1;
+                        }
+                      }
+                      final activeTotal =
+                          activeGroups.values.fold(0, (a, b) => a + b);
+
+                      // 가격 목록 (전체)
+                      final prices = list
+                          .where((i) => i.purchasePrice != null)
+                          .map((i) => i.purchasePrice!)
+                          .toList();
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 재고 현황 (판매 가능 상태만)
+                          Row(
+                            children: [
+                              const Text('재고 현황',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                              const Spacer(),
+                              Text(
+                                activeTotal > 0
+                                    ? '판매 가능 $activeTotal개'
+                                    : '판매 가능 없음',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: activeTotal > 0
+                                        ? Colors.black87
+                                        : Colors.grey.shade500),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          activeTotal > 0
+                              ? Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: activeGroups.entries.map((e) {
+                                    final style = _statusBadgeStyle(e.key);
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: style.bg,
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        border:
+                                            Border.all(color: style.border),
+                                      ),
+                                      child: Text(
+                                        '${_statusLabel(e.key)} ${e.value}개',
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: style.text,
+                                            fontWeight: FontWeight.w500),
+                                      ),
+                                    );
+                                  }).toList(),
+                                )
+                              : Text('리스팅 또는 포이즌보관 중인 재고가 없습니다.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade500)),
+
+                          if (prices.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            // 가격 요약
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                                border:
+                                    Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
+                                children: [
+                                  _PriceSummaryCell(
+                                      label: '최저',
+                                      price: prices.reduce(min)),
+                                  Container(
+                                      width: 1,
+                                      height: 28,
+                                      color: Colors.grey.shade300),
+                                  _PriceSummaryCell(
+                                      label: '평균',
+                                      price: (prices.reduce((a, b) => a + b) /
+                                              prices.length)
+                                          .round()),
+                                  Container(
+                                      width: 1,
+                                      height: 28,
+                                      color: Colors.grey.shade300),
+                                  _PriceSummaryCell(
+                                      label: '최고',
+                                      price: prices.reduce(max)),
+                                ],
+                              ),
+                            ),
+                          ],
+
+                          const SizedBox(height: 8),
+                          // 구매 이력 (접기/펼치기)
+                          Theme(
+                            data: Theme.of(context)
+                                .copyWith(dividerColor: Colors.transparent),
+                            child: ExpansionTile(
+                              tilePadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.history, size: 20),
+                              title: Text('구매 이력 ${list.length}건',
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600)),
+                              children: list
+                                  .map((info) =>
+                                      _PurchaseHistoryTile(info: info))
+                                  .toList(),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 12),
+                  // 액션 버튼
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context, 'rescan'),
+                          child: const Text('다시 스캔'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.pop(context, 'detail'),
+                          child: const Text('상세 보기'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _BarcodeNotFoundCard extends StatelessWidget {
-  final String barcode;
-  final VoidCallback onReset;
-  final VoidCallback onRegister;
+class _PriceSummaryCell extends StatelessWidget {
+  final String label;
+  final int price;
 
-  const _BarcodeNotFoundCard({
-    required this.barcode,
-    required this.onReset,
-    required this.onRegister,
-  });
+  const _PriceSummaryCell({required this.label, required this.price});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label,
+            style:
+                TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+        const SizedBox(height: 2),
+        Text('${NumberFormat('#,###').format(price)}원',
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+}
+
+class _PurchaseHistoryTile extends StatelessWidget {
+  final _ItemPurchaseInfo info;
+
+  const _PurchaseHistoryTile({required this.info});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Card(
-        color: Colors.orange.shade50,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.warning_amber, color: Colors.orange.shade700),
-                  const SizedBox(width: 8),
-                  Text('바코드 미등록: $barcode',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange.shade800)),
-                ],
+      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  info.sourceName ?? '구매처 미기록',
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  info.purchaseDate ?? '-',
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+          ),
+          if (info.purchasePrice != null)
+            Text(
+              '${NumberFormat('#,###').format(info.purchasePrice)}원',
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          const SizedBox(width: 8),
+          Builder(builder: (_) {
+            final style = _statusBadgeStyle(info.item.currentStatus);
+            return Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: style.bg,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: style.border),
               ),
-              const SizedBox(height: 8),
-              const Text('등록된 아이템이 없습니다.'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: onReset,
-                      child: const Text('다시 스캔'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: onRegister,
-                      child: const Text('입고 등록'),
-                    ),
-                  ),
-                ],
+              child: Text(
+                _statusLabel(info.item.currentStatus),
+                style: TextStyle(
+                    fontSize: 10,
+                    color: style.text,
+                    fontWeight: FontWeight.w500),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _BarcodeNotFoundSheet extends StatelessWidget {
+  final String barcode;
+
+  const _BarcodeNotFoundSheet({required this.barcode});
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomPad),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 드래그 핸들
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('바코드 미등록: $barcode',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.orange.shade800)),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          const Text('등록된 아이템이 없습니다.'),
+          const SizedBox(height: 20),
+          // 바코드 연결 버튼
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context, 'link'),
+              icon: const Icon(Icons.link, size: 18),
+              label: const Text('기존 재고에 바코드 연결'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context, 'rescan'),
+                  child: const Text('다시 스캔'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context, 'register'),
+                  child: const Text('입고 등록'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════
+// 바코드 연결 시트
+// ══════════════════════════════════════════════════
+
+class _BarcodeLinkSheet extends ConsumerStatefulWidget {
+  final String barcode;
+  const _BarcodeLinkSheet({required this.barcode});
+
+  @override
+  ConsumerState<_BarcodeLinkSheet> createState() => _BarcodeLinkSheetState();
+}
+
+class _BarcodeLinkSheetState extends ConsumerState<_BarcodeLinkSheet> {
+  final _searchCtrl = TextEditingController();
+  List<ItemData> _results = [];
+  bool _loading = false;
+  bool _searched = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() {
+      _loading = true;
+      _searched = true;
+    });
+    final items =
+        await ref.read(itemDaoProvider).searchWithoutBarcode(query.trim());
+    if (mounted) {
+      setState(() {
+        _results = items;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _linkBarcode(ItemData item) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('바코드 연결'),
+        content: Text(
+          '${item.sku} (KR ${item.sizeKr})에\n'
+          '바코드 ${widget.barcode}를 연결하시겠습니까?',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('연결'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    await ref.read(itemDaoProvider).updateItem(
+          item.id,
+          ItemsCompanion(
+            barcode: Value(widget.barcode),
+            updatedAt: Value(DateTime.now().toIso8601String()),
+          ),
+        );
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    final keyboardPad = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomPad + keyboardPad),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 드래그 핸들
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          // 헤더
+          Row(
+            children: [
+              const Icon(Icons.link, size: 24),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('바코드 연결: ${widget.barcode}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('바코드가 없는 재고를 검색하여 연결합니다.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+          const SizedBox(height: 12),
+          // 검색 입력
+          TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'SKU, 모델코드, 모델명 검색',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              border: const OutlineInputBorder(),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.arrow_forward, size: 20),
+                onPressed: () => _search(_searchCtrl.text),
+              ),
+            ),
+            onSubmitted: _search,
+          ),
+          const SizedBox(height: 12),
+          // 결과
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            )
+          else if (_searched && _results.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('바코드 없는 아이템을 찾을 수 없습니다.',
+                  style: TextStyle(color: Colors.grey.shade500)),
+            )
+          else if (_results.isNotEmpty)
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: _results.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (_, i) {
+                  final item = _results[i];
+                  final productAsync =
+                      ref.watch(_productForScanProvider(item.productId));
+                  return ListTile(
+                    dense: true,
+                    title: Text(item.sku,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'KR ${item.sizeKr} · ${_statusLabel(item.currentStatus)}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        productAsync.when(
+                          data: (p) => p != null
+                              ? Text(p.modelName,
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600))
+                              : const SizedBox.shrink(),
+                          loading: () => const SizedBox.shrink(),
+                          error: (_, __) => const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                    trailing: FilledButton.tonal(
+                      onPressed: () => _linkBarcode(item),
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                      ),
+                      child: const Text('연결', style: TextStyle(fontSize: 13)),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -898,15 +1371,80 @@ String _statusLabel(String status) => switch (status) {
       'OUTGOING' => '발송중',
       'IN_INSPECTION' => '검수중',
       'SETTLED' => '정산완료',
+      'POIZON_STORAGE' => '포이즌보관',
+      'DEFECT_FOR_SALE' => '하자판매',
+      'DEFECT_HELD' => '하자보류',
+      'DEFECT_SOLD' => '하자판매완료',
+      'DEFECT_SETTLED' => '하자정산',
+      'RETURNING' => '반품중',
+      'CANCEL_RETURNING' => '취소반품',
+      'REPAIRING' => '수선중',
+      'SUPPLIER_RETURN' => '공급사반품',
+      'ORDER_CANCELLED' => '주문취소',
+      'DISPOSED' => '폐기',
+      'SAMPLE' => '샘플',
       _ => status,
     };
+
+typedef _StatusStyle = ({Color bg, Color border, Color text});
+
+_StatusStyle _statusBadgeStyle(String status) {
+  return switch (status) {
+    'LISTED' => (
+        bg: const Color(0xFFE8F5E9),
+        border: const Color(0xFF81C784),
+        text: const Color(0xFF2E7D32),
+      ),
+    'POIZON_STORAGE' => (
+        bg: const Color(0xFFFFF3E0),
+        border: const Color(0xFFFFB74D),
+        text: const Color(0xFFE65100),
+      ),
+    _ => (
+        bg: const Color(0xFFF5F5F5),
+        border: const Color(0xFFBDBDBD),
+        text: const Color(0xFF9E9E9E),
+      ),
+  };
+}
 
 final _productForScanProvider =
     FutureProvider.family<Product?, String>((ref, productId) {
   return ref.watch(masterDaoProvider).getProductById(productId);
 });
 
-final _purchaseForScanProvider =
-    FutureProvider.family<PurchaseData?, String>((ref, itemId) {
-  return ref.watch(purchaseDaoProvider).getByItemId(itemId);
+// 동일 모델+사이즈 아이템별 구매 정보 (구매처명 포함)
+typedef _ItemPurchaseInfo = ({
+  ItemData item,
+  String? purchaseDate,
+  int? purchasePrice,
+  String? sourceName,
+});
+
+final _modelSizeStockProvider = FutureProvider.family<List<_ItemPurchaseInfo>,
+    ({String productId, String sizeKr})>((ref, args) async {
+  final allItems =
+      await ref.watch(itemDaoProvider).getAllByProductId(args.productId);
+  final sizeItems = allItems
+      .where((i) =>
+          i.sizeKr == args.sizeKr && i.currentStatus != 'SETTLED')
+      .toList();
+
+  final purchaseMap = await ref
+      .watch(purchaseDaoProvider)
+      .getByItemIds(sizeItems.map((i) => i.id).toList());
+  final sourcesMap = await ref.watch(masterDaoProvider).getAllSourcesMap();
+
+  return sizeItems.map((item) {
+    final purchase = purchaseMap[item.id];
+    final sourceName = purchase?.sourceId != null
+        ? sourcesMap[purchase!.sourceId]?.name
+        : null;
+    return (
+      item: item,
+      purchaseDate: purchase?.purchaseDate,
+      purchasePrice: purchase?.purchasePrice,
+      sourceName: sourceName,
+    );
+  }).toList();
 });

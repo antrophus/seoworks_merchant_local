@@ -184,6 +184,36 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
     return rows.map((r) => r.readTable(items)).toList();
   }
 
+  /// 동일 모델 + 동일 사이즈의 미정산 재고 수량
+  Future<int> countByProductAndSize(String productId, String sizeKr) async {
+    const settled = 'SETTLED';
+    final result = await (select(items)
+          ..where((t) =>
+              t.productId.equals(productId) &
+              t.sizeKr.equals(sizeKr) &
+              t.currentStatus.equals(settled).not()))
+        .get();
+    return result.length;
+  }
+
+  /// 바코드 미등록 아이템 검색 (SKU / 모델코드 / 모델명)
+  Future<List<ItemData>> searchWithoutBarcode(String query) async {
+    final pattern = '%$query%';
+    final result = select(items).join([
+      innerJoin(products, products.id.equalsExp(items.productId)),
+    ]);
+    result.where(
+      (items.barcode.isNull() | items.barcode.equals('')) &
+          (items.sku.like(pattern) |
+              products.modelCode.like(pattern) |
+              products.modelName.like(pattern)),
+    );
+    result.orderBy([OrderingTerm.desc(items.createdAt)]);
+    result.limit(30);
+    final rows = await result.get();
+    return rows.map((r) => r.readTable(items)).toList();
+  }
+
   /// 상품(productId) 기준 전체 아이템 조회 (사이즈별 재고 등)
   Future<List<ItemData>> getAllByProductId(String productId) =>
       (select(items)

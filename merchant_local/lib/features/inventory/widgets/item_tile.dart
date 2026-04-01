@@ -39,6 +39,7 @@ class ItemTile extends ConsumerWidget {
         selectionProvider.select((ids) => ids.contains(item.id)));
     final isActive = ref.watch(
         selectionProvider.select((ids) => ids.isNotEmpty));
+    final selectionEnabled = ref.watch(selectionEnabledProvider);
 
     final statusLabel = statusLabels[item.currentStatus] ?? item.currentStatus;
     final statusClr = statusColor(item.currentStatus);
@@ -55,7 +56,7 @@ class ItemTile extends ConsumerWidget {
             context.push('/item/${item.id}');
           }
         },
-        onLongPress: () {
+        onLongPress: selectionEnabled ? () {
           if (!isActive) {
             ref.read(selectionProvider.notifier).toggle(item.id);
           } else {
@@ -67,7 +68,7 @@ class ItemTile extends ConsumerWidget {
               }
             });
           }
-        },
+        } : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),

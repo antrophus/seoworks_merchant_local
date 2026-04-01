@@ -33,6 +33,7 @@ class SelectionNotifier extends StateNotifier<Set<String>> {
 
   void clear() => state = {};
   void addAll(Iterable<String> ids) => state = {...state, ...ids};
+  void removeAll(Iterable<String> ids) => state = state.difference(ids.toSet());
   void selectAll(Iterable<String> ids) {
     state = state.length == ids.length ? {} : ids.toSet();
   }
@@ -41,6 +42,19 @@ class SelectionNotifier extends StateNotifier<Set<String>> {
 final selectionProvider =
     StateNotifierProvider<SelectionNotifier, Set<String>>(
         (ref) => SelectionNotifier());
+
+/// 현재 필터에서 일괄 선택 가능 여부 (정산완료·기타는 상태 변경 없으므로 불가)
+final selectionEnabledProvider = Provider<bool>((ref) {
+  final filter = ref.watch(inventoryFilterProvider);
+  if (filter == null) return true;
+  const disabled = {
+    'SETTLED,DEFECT_SETTLED',
+    'ORDER_CANCELLED,SUPPLIER_RETURN,DISPOSED,SAMPLE',
+    'SETTLED', 'DEFECT_SETTLED',
+    'ORDER_CANCELLED', 'SUPPLIER_RETURN', 'DISPOSED', 'SAMPLE',
+  };
+  return !disabled.contains(filter);
+});
 
 final searchResultProvider =
     FutureProvider.family<List<ItemData>, String>((ref, key) {

@@ -28,6 +28,7 @@ class ItemGroup {
   final List<ItemWithRelated> items;
   final bool isSettlement;
   final bool isListed;
+  final bool showGroupSelect;
 
   const ItemGroup({
     required this.title,
@@ -37,6 +38,7 @@ class ItemGroup {
     required this.items,
     this.isSettlement = false,
     this.isListed = false,
+    this.showGroupSelect = false,
   });
 }
 
@@ -231,6 +233,7 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
         summaryFn: (items) =>
             '판매가합 ${fmt.format(items.fold<int>(0, (s, r) => s + (r.sale?.sellPrice ?? 0)))}원',
         forceAsc: true,
+        showGroupSelect: true,
       );
     }
 
@@ -264,6 +267,7 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
     required String Function(List<ItemWithRelated>) summaryFn,
     bool isSettlement = false,
     bool isListed = false,
+    bool showGroupSelect = false,
     bool? forceAsc,
   }) {
     final grouped = <String, List<ItemData>>{};
@@ -290,6 +294,7 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
         items: wrapped,
         isSettlement: isSettlement,
         isListed: isListed,
+        showGroupSelect: showGroupSelect,
       );
     }).toList();
 
@@ -316,12 +321,18 @@ class _GroupedListViewState extends ConsumerState<GroupedListView>
 // 그룹 카드
 // ══════════════════════════════════════════════════
 
-class GroupCard extends StatelessWidget {
+class GroupCard extends ConsumerWidget {
   final ItemGroup group;
   const GroupCard({super.key, required this.group});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final groupIds = group.items.map((r) => r.item.id).toSet();
+    final selectedIds = ref.watch(selectionProvider);
+    final isActive = selectedIds.isNotEmpty;
+    final allSelected = isActive && groupIds.every(selectedIds.contains);
+    final anySelected = isActive && groupIds.any(selectedIds.contains);
+
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: ClipRRect(
@@ -333,7 +344,38 @@ class GroupCard extends StatelessWidget {
           title: group.isListed
               ? _buildListedTitle()
               : _buildDefaultTitle(context),
-          trailing: _countBadge(),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (group.showGroupSelect && isActive) ...[
+                GestureDetector(
+                  onTap: () {
+                    final notifier = ref.read(selectionProvider.notifier);
+                    if (allSelected) {
+                      notifier.removeAll(groupIds);
+                    } else {
+                      notifier.addAll(groupIds);
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Icon(
+                      allSelected
+                          ? Icons.check_circle
+                          : anySelected
+                              ? Icons.remove_circle_outline
+                              : Icons.radio_button_unchecked,
+                      size: 22,
+                      color: allSelected || anySelected
+                          ? AppColors.primary
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
+              _countBadge(),
+            ],
+          ),
           children: group.items
               .map((r) => ItemTile(
                     item: r.item,

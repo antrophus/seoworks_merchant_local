@@ -7,6 +7,7 @@ import '../listings/listings_screen.dart';
 import '../orders/orders_screen.dart';
 import '../scan/scan_screen.dart';
 import '../../core/providers.dart';
+import '../inventory/inventory_providers.dart';
 
 /// 현재 선택된 탭 인덱스
 final homeTabProvider = StateProvider<int>((ref) => 0);
@@ -131,13 +132,16 @@ class HomeScreen extends ConsumerWidget {
           child: _tabs[tabIndex],
         ),
       ),
-      floatingActionButton: tabIndex == 1 // 재고 탭
-          ? FloatingActionButton(
-              onPressed: () => context.push('/register'),
-              tooltip: '입고 등록',
-              child: const Icon(Icons.add),
-            )
-          : null,
+      floatingActionButton: () {
+        if (tabIndex != 1) return null;
+        final selectedIds = ref.watch(selectionProvider);
+        if (selectedIds.isNotEmpty) return null;
+        return FloatingActionButton(
+          onPressed: () => context.push('/register'),
+          tooltip: '입고 등록',
+          child: const Icon(Icons.add),
+        );
+      }(),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(

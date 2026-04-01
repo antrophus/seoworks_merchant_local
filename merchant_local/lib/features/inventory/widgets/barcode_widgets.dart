@@ -173,36 +173,70 @@ class BarcodeResultSheet extends ConsumerWidget {
               }
               return Column(
                 children: grouped.entries.map((e) {
-                  final activeCount = e.value
-                      .where((i) => !{'SETTLED', 'DEFECT_SETTLED',
-                              'ORDER_CANCELLED', 'SUPPLIER_RETURN', 'DISPOSED'}
-                          .contains(i.currentStatus))
+                  final listedCount = e.value
+                      .where((i) => i.currentStatus == 'LISTED')
                       .length;
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 6),
-                    child: ListTile(
-                      dense: true,
-                      leading: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: activeCount > 0
-                            ? AppColors.successBg
-                            : AppColors.surfaceVariant,
-                        child: Text('$activeCount',
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: activeCount > 0
-                                    ? AppColors.success
-                                    : AppColors.textTertiary)),
+                  final isSoldOut = listedCount == 0;
+                  return Opacity(
+                    opacity: isSoldOut ? 0.45 : 1.0,
+                    child: Card(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      child: Stack(
+                        alignment: Alignment.centerRight,
+                        children: [
+                          ListTile(
+                            dense: true,
+                            leading: CircleAvatar(
+                              radius: 14,
+                              backgroundColor: isSoldOut
+                                  ? AppColors.surfaceVariant
+                                  : AppColors.successBg,
+                              child: Text('$listedCount',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSoldOut
+                                          ? AppColors.textTertiary
+                                          : AppColors.success)),
+                            ),
+                            title: Text('사이즈 ${e.key}',
+                                style: const TextStyle(fontSize: 14)),
+                            subtitle: Text('총 ${e.value.length}건',
+                                style: const TextStyle(fontSize: 12)),
+                            onTap: isSoldOut
+                                ? null
+                                : () {
+                                    Navigator.pop(context);
+                                    context.push('/item/${e.value.first.id}');
+                                  },
+                          ),
+                          if (isSoldOut)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 16),
+                              child: Transform.rotate(
+                                angle: -0.25,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                        color: Colors.red.withAlpha(160),
+                                        width: 1.5),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '품절',
+                                    style: TextStyle(
+                                        color: Colors.red.withAlpha(160),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        letterSpacing: 1),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                      title: Text('사이즈 ${e.key}',
-                          style: const TextStyle(fontSize: 14)),
-                      subtitle: Text('총 ${e.value.length}건',
-                          style: const TextStyle(fontSize: 12)),
-                      onTap: () {
-                        Navigator.pop(context);
-                        context.push('/item/${e.value.first.id}');
-                      },
                     ),
                   );
                 }).toList(),
@@ -228,7 +262,19 @@ class BarcodeResultSheet extends ConsumerWidget {
               child: FilledButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
-                  context.push('/register');
+                  final product = productAsync.valueOrNull;
+                  final params = <String, String>{};
+                  if (product?.modelCode != null) {
+                    params['modelCode'] = product!.modelCode;
+                  }
+                  if (product?.modelName != null) {
+                    params['modelName'] = product!.modelName;
+                  }
+                  final uri = Uri(
+                    path: '/register',
+                    queryParameters: params.isEmpty ? null : params,
+                  );
+                  context.push(uri.toString());
                 },
                 icon: const Icon(Icons.add_box, size: 18),
                 label: const Text('추가 입고'),

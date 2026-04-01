@@ -25,6 +25,7 @@ class InventoryScreen extends ConsumerStatefulWidget {
 
 class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode();
   Timer? _debounce;
   bool _showMore = false;
   int? _subIndex;
@@ -32,6 +33,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _searchFocus.dispose();
     _debounce?.cancel();
     super.dispose();
   }
@@ -56,6 +58,24 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 선택 모드 진입 시 키보드 숨김
+    ref.listen(selectionProvider, (prev, next) {
+      if (next.isNotEmpty && _searchFocus.hasFocus) {
+        _searchFocus.unfocus();
+      }
+    });
+
+    // 선택 불가 필터로 전환 시 선택 초기화
+    ref.listen(inventoryFilterProvider, (prev, next) {
+      const noSelect = {
+        'SETTLED,DEFECT_SETTLED',
+        'ORDER_CANCELLED,SUPPLIER_RETURN,DISPOSED,SAMPLE',
+      };
+      if (next != null && noSelect.contains(next)) {
+        ref.read(selectionProvider.notifier).clear();
+      }
+    });
+
     final filter = ref.watch(inventoryFilterProvider);
     final searchQuery = ref.watch(inventorySearchProvider);
     final isSearching = searchQuery.isNotEmpty;
@@ -121,6 +141,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: TextField(
             controller: _searchCtrl,
+            focusNode: _searchFocus,
             decoration: InputDecoration(
               hintText: 'SKU, 모델코드, 바코드 검색',
               prefixIcon: const Icon(Icons.search),
@@ -280,6 +301,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
           if (selectedIds.isEmpty) return const SizedBox.shrink();
           return BatchActionBar(
             selectedIds: selectedIds,
+            effectiveFilter: effectiveFilter,
             onDone: () {
               final search = ref.read(inventorySearchProvider);
               final filter = ref.read(inventoryFilterProvider);
@@ -385,6 +407,15 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                 BarcodeResultSheet(barcode: barcode!, item: item, scrollController: sc),
           ),
         );
+        if (mounted) {
+          final product =
+              await ref.read(masterDaoProvider).getProductById(item.productId);
+          if (product != null && mounted) {
+            _searchCtrl.text = product.modelCode;
+            _debounce?.cancel();
+            ref.read(inventorySearchProvider.notifier).state = product.modelCode;
+          }
+        }
       } else {
         final go = await showDialog<bool>(
           context: context,

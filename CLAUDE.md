@@ -134,11 +134,22 @@ UI 구조, 시각 디자인, 컴포넌트, 레이아웃, 색상, 타이포그래
 - [x] DB 마이그레이션 v4→v5 계획 (16개 테이블에 hlc + isDeleted 추가)
 - [x] migration plan Sprint 5 섹션 업데이트
 
+### 완료된 작업 (2026-04-01) — 재고 스캔·선택 UX 개선
+- [x] 재고 바코드 스캔 결과 시트: LISTED 카운트만 표시, 품절 도장 효과
+- [x] 추가 입고 버튼: modelCode/modelName 쿼리 파라미터 전달로 폼 미리 채움
+- [x] 바코드 스캔 후 검색바에 modelCode 자동 입력 → 재고 목록 연동
+- [x] 선택 모드 진입 시 키보드 자동 숨김
+- [x] 배치 액션 바: 필터/탭 컨텍스트 기반 버튼 표시 (6가지 케이스)
+- [x] 정산완료·기타 필터: 롱프레스 선택 비활성화 + 필터 전환 시 선택 초기화
+- [x] 선택 중 입고등록 FAB 숨김
+- [x] 발송·검수 그룹 카드: 송장 단위 전체 선택 토글 (부분/전체/해제)
+
 ### 다음 세션 작업
-- **Phase 3 (Google Drive 동기화)**: `merchant_local/docs/google-drive-sync-guide.md` 참조
+- **우선순위 1 — APK 빌드 및 실기기 테스트**: 오늘 변경분(스캔·선택 UX) 실기기 검증
+- **우선순위 2 — Phase 3 (Google Drive 동기화)**: `merchant_local/docs/google-drive-sync-guide.md` 참조
   - 사전 준비: Google Cloud Console OAuth 설정 + `google-services.json` 필요
   - 구현 순서: Phase 3-1(DB 마이그레이션) → 3-2(HlcClock) → 3-3(DAO 수정) → 3-4(Drive Service) → 3-5(SyncEngine) → 3-6(UI) → 3-7(자동 동기화)
-- **잔여 이슈**: INV-09 재고 위치별 탭 미구현, 캘린더 뷰(CAL-01~03), 이미지 저장 로직 확인
+- **잔여 UX 이슈**: 미등록 필터 전체 선택(현재 서브탭 미선택 시 안내만 표시), INV-09 재고 위치별 탭, 캘린더 뷰(CAL-01~03)
 - 상세: `merchant_local/docs/web-to-local-migration-plan.md` 참조
 
 ### 설치된 도구 (전역)

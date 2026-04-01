@@ -7,7 +7,6 @@ import 'package:uuid/uuid.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../inventory_providers.dart';
 import '../status_actions.dart';
 
 // ══════════════════════════════════════════════════
@@ -16,10 +15,15 @@ import '../status_actions.dart';
 
 class BatchActionBar extends ConsumerStatefulWidget {
   final Set<String> selectedIds;
+  final String? effectiveFilter;
   final VoidCallback onDone;
 
-  const BatchActionBar(
-      {super.key, required this.selectedIds, required this.onDone});
+  const BatchActionBar({
+    super.key,
+    required this.selectedIds,
+    this.effectiveFilter,
+    required this.onDone,
+  });
 
   @override
   ConsumerState<BatchActionBar> createState() => _BatchActionBarState();
@@ -30,9 +34,7 @@ class _BatchActionBarState extends ConsumerState<BatchActionBar> {
 
   @override
   Widget build(BuildContext context) {
-    final filter = ref.watch(inventoryFilterProvider);
-    final currentFilterDef = findCurrentFilter(filter);
-    final buttons = _buildButtons(context, currentFilterDef?.statuses);
+    final buttons = _buildButtons(context, widget.effectiveFilter);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -62,126 +64,89 @@ class _BatchActionBarState extends ConsumerState<BatchActionBar> {
     );
   }
 
-  List<Widget> _buildButtons(
-      BuildContext context, List<String>? statuses) {
-    if (statuses == null) {
-      return [
-        _btn(context, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
-            () => _batchStatusChange(context)),
-      ];
-    }
-
-    final s = statuses.toSet();
+  List<Widget> _buildButtons(BuildContext context, String? effectiveFilter) {
     const gap = SizedBox(width: 8);
 
-    // 판매중: LISTED, POIZON_STORAGE
-    if (s.contains('LISTED') || s.contains('POIZON_STORAGE')) {
-      return [
-        if (s.contains('LISTED')) ...[
-          _btn(context, '발송', Icons.local_shipping,
-              AppColors.statusOutgoing, () => _batchSellAndShip(context)),
+    switch (effectiveFilter) {
+      case 'LISTED':
+        return [
+          _btn(context, '발송', Icons.local_shipping, AppColors.statusOutgoing,
+              () => _batchSellAndShip(context)),
           gap,
-          _btn(
-              context,
-              '리스팅취소',
-              Icons.warehouse,
-              Colors.blue,
-              () => _batchSimpleTransition(
-                  context, 'LISTED', 'OFFICE_STOCK', '리스팅 취소')),
-        ],
-        if (s.contains('POIZON_STORAGE')) ...[
-          if (s.contains('LISTED')) gap,
-          _btn(
-              context,
-              '정산완료',
-              Icons.check_circle,
-              AppColors.success,
-              () => _batchSimpleTransition(
-                  context, 'POIZON_STORAGE', 'SETTLED', '보관판매 정산')),
-          gap,
-          _btn(
-              context,
-              '반송전환',
-              Icons.local_shipping_outlined,
-              Colors.indigo,
-              () => _batchSimpleTransition(
-                  context, 'POIZON_STORAGE', 'CANCEL_RETURNING', '반송 전환')),
-        ],
-      ];
-    }
+          _btn(context, '리스팅취소', Icons.warehouse, Colors.blue,
+              () => _batchSimpleTransition(context, 'LISTED', 'OFFICE_STOCK', '리스팅 취소')),
+        ];
 
-    // 발송·검수: OUTGOING, IN_INSPECTION
-    if (s.contains('OUTGOING') || s.contains('IN_INSPECTION')) {
-      return [
-        if (s.contains('OUTGOING')) ...[
-          _btn(
-              context,
-              '검수도착',
-              Icons.fact_check,
-              Colors.purple,
-              () => _batchSimpleTransition(
-                  context, 'OUTGOING', 'IN_INSPECTION', '검수 도착')),
-        ],
-        if (s.contains('IN_INSPECTION')) ...[
-          if (s.contains('OUTGOING')) gap,
+      case 'POIZON_STORAGE':
+        return [
+          _btn(context, '정산완료', Icons.check_circle, AppColors.success,
+              () => _batchSimpleTransition(context, 'POIZON_STORAGE', 'SETTLED', '보관판매 정산')),
+          gap,
+          _btn(context, '반송전환', Icons.local_shipping_outlined, Colors.indigo,
+              () => _batchSimpleTransition(context, 'POIZON_STORAGE', 'CANCEL_RETURNING', '반송 전환')),
+        ];
+
+      case 'OUTGOING':
+        return [
+          _btn(context, '검수도착', Icons.fact_check, Colors.purple,
+              () => _batchSimpleTransition(context, 'OUTGOING', 'IN_INSPECTION', '검수 도착')),
+        ];
+
+      case 'IN_INSPECTION':
+        return [
           _btn(context, '검수통과', Icons.check_circle, AppColors.success,
               () => _batchInspectionPass(context)),
           gap,
           _btn(context, '반려', Icons.warning_amber, Colors.amber,
               () => _batchInspectionReject(context)),
-        ],
-      ];
-    }
+        ];
 
-    // 미등록: ORDER_PLACED, OFFICE_STOCK
-    if (s.contains('ORDER_PLACED') || s.contains('OFFICE_STOCK')) {
-      return [
-        if (s.contains('ORDER_PLACED')) ...[
-          _btn(
-              context,
-              '입고',
-              Icons.warehouse,
-              Colors.blue,
-              () => _batchSimpleTransition(
-                  context, 'ORDER_PLACED', 'OFFICE_STOCK', '입고')),
+      case 'ORDER_PLACED':
+        return [
+          _btn(context, '입고', Icons.warehouse, Colors.blue,
+              () => _batchSimpleTransition(context, 'ORDER_PLACED', 'OFFICE_STOCK', '입고')),
           gap,
-          _btn(
-              context,
-              '주문취소',
-              Icons.cancel,
-              Colors.red,
-              () => _batchSimpleTransition(
-                  context, 'ORDER_PLACED', 'ORDER_CANCELLED', '주문 취소')),
-        ],
-        if (s.contains('OFFICE_STOCK')) ...[
-          if (s.contains('ORDER_PLACED')) gap,
+          _btn(context, '주문취소', Icons.cancel, Colors.red,
+              () => _batchSimpleTransition(context, 'ORDER_PLACED', 'ORDER_CANCELLED', '주문 취소')),
+        ];
+
+      case 'OFFICE_STOCK':
+        return [
           _btn(context, '리스팅등록', Icons.sell, Colors.teal,
               () => _batchListing(context)),
           gap,
-          _btn(
-              context,
-              '공급처반품',
-              Icons.undo,
-              Colors.blueGrey,
-              () => _batchSimpleTransition(
-                  context, 'OFFICE_STOCK', 'SUPPLIER_RETURN', '공급처 반품')),
+          _btn(context, '공급처반품', Icons.undo, Colors.blueGrey,
+              () => _batchSimpleTransition(context, 'OFFICE_STOCK', 'SUPPLIER_RETURN', '공급처 반품')),
           gap,
-          _btn(
-              context,
-              '폐기',
-              Icons.card_giftcard,
-              Colors.pink,
-              () => _batchSimpleTransition(
-                  context, 'OFFICE_STOCK', 'SAMPLE', '폐기')),
-        ],
-      ];
-    }
+          _btn(context, '폐기', Icons.delete_outline, Colors.pink,
+              () => _batchSimpleTransition(context, 'OFFICE_STOCK', 'DISPOSED', '폐기')),
+        ];
 
-    // 기타 → 범용
-    return [
-      _btn(context, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
-          () => _batchStatusChange(context)),
-    ];
+      default:
+        // CSV(서브탭 미선택) 또는 null → 서브탭을 먼저 선택하도록 안내
+        if (effectiveFilter != null && effectiveFilter.contains(',')) {
+          final statuses = effectiveFilter.split(',').toSet();
+          final hints = <String>[];
+          if (statuses.containsAll({'LISTED', 'POIZON_STORAGE'})) {
+            hints.add('리스팅 / 포이즌보관 탭을 선택하세요');
+          } else if (statuses.containsAll({'OUTGOING', 'IN_INSPECTION'})) {
+            hints.add('발송중 / 검수중 탭을 선택하세요');
+          } else if (statuses.containsAll({'ORDER_PLACED', 'OFFICE_STOCK'})) {
+            hints.add('입고대기 / 미등록재고 탭을 선택하세요');
+          }
+          if (hints.isNotEmpty) {
+            return [
+              Text(hints.first,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textSecondary)),
+            ];
+          }
+        }
+        return [
+          _btn(context, '상태변경', Icons.swap_vert_rounded, AppColors.primary,
+              () => _batchStatusChange(context)),
+        ];
+    }
   }
 
   Widget _btn(BuildContext context, String label, IconData icon,
@@ -761,7 +726,11 @@ class _BatchListingSheetState extends ConsumerState<_BatchListingSheet> {
             Expanded(
               child: ListView(
                 controller: sc,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+                ),
                 children: [
                   // 플랫폼 선택
                   DropdownButtonFormField<String>(
@@ -797,6 +766,7 @@ class _BatchListingSheetState extends ConsumerState<_BatchListingSheet> {
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly
                           ],
+                          onTap: () => _bulkPriceCtrl.clear(),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -822,7 +792,7 @@ class _BatchListingSheetState extends ConsumerState<_BatchListingSheet> {
 
             // 하단 버튼
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: EdgeInsets.fromLTRB(16, 0, 16, MediaQuery.of(context).viewInsets.bottom + 8),
               child: SafeArea(
                 top: false,
                 child: Column(
@@ -895,6 +865,7 @@ class _BatchListingSheetState extends ConsumerState<_BatchListingSheet> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             textAlign: TextAlign.end,
             style: const TextStyle(fontSize: 14),
+            onTap: () => _priceControllers[item.id]!.clear(),
           ),
         ),
       ],
@@ -925,7 +896,6 @@ class _BatchSellShipSheet extends ConsumerStatefulWidget {
 class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
   late final Map<String, TextEditingController> _priceControllers;
   final _bulkPriceCtrl = TextEditingController();
-  final _trackingCtrl = TextEditingController();
   late String _shipDate;
 
   @override
@@ -947,7 +917,6 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
       c.dispose();
     }
     _bulkPriceCtrl.dispose();
-    _trackingCtrl.dispose();
     super.dispose();
   }
 
@@ -995,7 +964,11 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
             Expanded(
               child: ListView(
                 controller: sc,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+                ),
                 children: [
                   Row(
                     children: [
@@ -1010,6 +983,7 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly
                           ],
+                          onTap: () => _bulkPriceCtrl.clear(),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1024,16 +998,6 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
                     _batchItemRow(item),
                     const SizedBox(height: 8),
                   ],
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _trackingCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '운송장 번호 (선택)',
-                      prefixIcon: Icon(Icons.local_shipping_outlined),
-                      isDense: true,
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
                   const SizedBox(height: 12),
                   InkWell(
                     onTap: () async {
@@ -1063,7 +1027,7 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: EdgeInsets.fromLTRB(16, 0, 16, MediaQuery.of(context).viewInsets.bottom + 8),
               child: SafeArea(
                 top: false,
                 child: Column(
@@ -1120,6 +1084,7 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             textAlign: TextAlign.end,
             style: const TextStyle(fontSize: 14),
+            onTap: () => _priceControllers[item.id]!.clear(),
           ),
         ),
       ],
@@ -1127,6 +1092,24 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
   }
 
   Future<void> _submit() async {
+    // 가격 미입력 체크
+    final hasPrices = widget.items.any(
+      (i) => int.tryParse(_priceControllers[i.id]?.text ?? '') != null,
+    );
+    if (!hasPrices) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('판매가를 입력하세요')),
+      );
+      return;
+    }
+
+    // 운송장 번호 입력 다이얼로그
+    if (!context.mounted) return;
+    final trackingRaw = await _askTrackingNumber(context);
+    if (!context.mounted) return;
+    final trackingNumber =
+        (trackingRaw != null && trackingRaw.isNotEmpty) ? trackingRaw : null;
+
     const uuid = Uuid();
     int successCount = 0;
     int failureCount = 0;
@@ -1148,21 +1131,19 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
                   listedPrice: Value(sale.listedPrice),
                   saleDate: Value(_shipDate),
                   outgoingDate: Value(_shipDate),
-                  trackingNumber: Value(_trackingCtrl.text.isNotEmpty
-                      ? _trackingCtrl.text.trim()
-                      : null),
+                  trackingNumber: Value(trackingNumber),
                   platformFeeRate: Value(sale.platformFeeRate),
                 ),
               );
         }
 
-        if (_trackingCtrl.text.trim().isNotEmpty) {
+        if (trackingNumber != null) {
           await ref.read(subRecordDaoProvider).addShipment(
                 ShipmentsCompanion(
                   id: Value(uuid.v4()),
                   itemId: Value(item.id),
                   seq: const Value(0),
-                  trackingNumber: Value(_trackingCtrl.text.trim()),
+                  trackingNumber: Value(trackingNumber),
                   outgoingDate: Value(_shipDate),
                   platform: Value(sale?.platform),
                   createdAt: Value(DateTime.now().toIso8601String()),
@@ -1187,5 +1168,45 @@ class _BatchSellShipSheetState extends ConsumerState<_BatchSellShipSheet> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       Navigator.pop(context, successCount > 0);
     }
+  }
+
+  Future<String?> _askTrackingNumber(BuildContext context) {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.local_shipping_outlined, size: 20),
+            SizedBox(width: 8),
+            Text('운송장 번호'),
+          ],
+        ),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: const InputDecoration(
+            hintText: '운송장 번호 입력',
+            prefixIcon: Icon(Icons.numbers),
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ''),
+            child: const Text('건너뛰기'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
   }
 }
