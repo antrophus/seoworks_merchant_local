@@ -287,7 +287,8 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
         SUBSTR(COALESCE(s.settled_at, s.sale_date), 1, 7) AS month,
         COALESCE(SUM(s.sell_price), 0) AS sell,
         COALESCE(SUM(s.settlement_amount), 0) AS settlement,
-        COALESCE(SUM(s.settlement_amount - COALESCE(p.purchase_price, 0)), 0) AS profit
+        COALESCE(SUM(s.settlement_amount - COALESCE(p.purchase_price, 0)), 0) AS profit,
+        CAST(COALESCE(SUM(CAST(p.purchase_price AS REAL) / 11.0), 0) AS INTEGER) AS vat_refund
       FROM sales s
       JOIN items i ON i.id = s.item_id
       LEFT JOIN purchases p ON p.item_id = s.item_id
@@ -305,6 +306,7 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
           'sell': r.read<int>('sell'),
           'settlement': r.read<int>('settlement'),
           'profit': r.read<int>('profit'),
+          'vatRefund': r.read<int>('vat_refund'),
         }).toList();
   }
 
@@ -375,6 +377,7 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       LEFT JOIN purchases p ON p.item_id = s.item_id
       WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
         AND s.settlement_amount IS NOT NULL
+        AND p.purchase_price IS NOT NULL AND p.purchase_price > 0
       $where
       GROUP BY pr.model_code, pr.model_name
       ORDER BY profit $order

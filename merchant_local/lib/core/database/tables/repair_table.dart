@@ -13,6 +13,8 @@ class Repairs extends Table {
   TextColumn get outcome =>
       text().nullable()(); // RELISTED, SUPPLIER_RETURN, DISPOSED, PERSONAL
   TextColumn get createdAt => text()();
+  TextColumn get hlc => text().withDefault(const Constant(''))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};

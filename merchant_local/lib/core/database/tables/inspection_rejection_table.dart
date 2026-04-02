@@ -15,6 +15,8 @@ class InspectionRejections extends Table {
   TextColumn get defectType => text().nullable()(); // DEFECT_SALE, DEFECT_HELD, DEFECT_RETURN
   IntColumn get discountAmount => integer().nullable()();
   TextColumn get createdAt => text().nullable()();
+  TextColumn get hlc => text().withDefault(const Constant(''))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};

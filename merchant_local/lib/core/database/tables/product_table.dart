@@ -12,6 +12,8 @@ class Products extends Table {
   TextColumn get imageUrl => text().nullable()();
   TextColumn get poizonSpuId => text().nullable().unique()();
   TextColumn get createdAt => text().nullable()();
+  TextColumn get hlc => text().withDefault(const Constant(''))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};

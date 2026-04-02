@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'database/app_database.dart';
+import 'services/hlc_clock_service.dart';
 import 'database/daos/sku_dao.dart';
 import 'database/daos/listing_dao.dart';
 import 'database/daos/order_dao.dart';
@@ -15,6 +16,11 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase();
   ref.onDispose(() => db.close());
   return db;
+});
+
+/// HLC 시계 — main.dart에서 override 필수
+final hlcClockProvider = Provider<HlcClockService>((ref) {
+  throw UnimplementedError('hlcClockProvider must be overridden at startup');
 });
 
 /// ── POIZON API 캐시 DAOs ──

@@ -18,6 +18,8 @@ class Purchases extends Table {
   TextColumn get receiptUrl => text().nullable()();
   TextColumn get memo => text().nullable()();
   TextColumn get createdAt => text().nullable()();
+  TextColumn get hlc => text().withDefault(const Constant(''))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};

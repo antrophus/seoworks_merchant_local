@@ -12,6 +12,8 @@ class Shipments extends Table {
   TextColumn get platform => text().nullable()(); // sale_platform
   TextColumn get memo => text().nullable()();
   TextColumn get createdAt => text().nullable()();
+  TextColumn get hlc => text().withDefault(const Constant(''))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};

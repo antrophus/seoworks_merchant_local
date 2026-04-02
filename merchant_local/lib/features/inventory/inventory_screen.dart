@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../home/home_screen.dart';
 import 'inventory_providers.dart';
 import 'widgets/barcode_widgets.dart';
 import 'widgets/batch_actions.dart';
@@ -28,7 +29,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   final _searchFocus = FocusNode();
   Timer? _debounce;
   bool _showMore = false;
-  int? _subIndex;
+  int? _subIndex = 0;
 
   @override
   void dispose() {
@@ -58,6 +59,16 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 재고 탭 재진입 시 판매중(리스팅) 초기화
+    ref.listen(homeTabProvider, (prev, next) {
+      if (next == 1 && prev != 1) {
+        ref.read(inventoryFilterProvider.notifier).state = 'LISTED,POIZON_STORAGE';
+        ref.read(inventorySearchProvider.notifier).state = '';
+        _searchCtrl.clear();
+        setState(() => _subIndex = 0);
+      }
+    });
+
     // 선택 모드 진입 시 키보드 숨김
     ref.listen(selectionProvider, (prev, next) {
       if (next.isNotEmpty && _searchFocus.hasFocus) {

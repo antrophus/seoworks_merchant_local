@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:uuid/uuid.dart';
 
 // ── 마스터 테이블 ──
 import 'tables/brand_table.dart';
@@ -91,7 +92,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -172,6 +173,30 @@ class AppDatabase extends _$AppDatabase {
                 'CREATE INDEX IF NOT EXISTS idx_listings_status ON poizon_listings (status)');
             await customStatement(
                 'CREATE INDEX IF NOT EXISTS idx_orders_status ON poizon_orders (status)');
+          }
+          // v4 → v5: 16개 테이블에 hlc + is_deleted 추가 (CRDT 동기화 준비)
+          if (from < 5) {
+            const tables = [
+              'brands', 'sources', 'products', 'size_charts',
+              'items', 'purchases', 'sales', 'sale_adjustments',
+              'status_logs', 'inspection_rejections', 'repairs', 'shipments',
+              'supplier_returns', 'order_cancellations', 'sample_usages',
+              'platform_fee_rules',
+            ];
+            for (final table in tables) {
+              await customStatement(
+                "ALTER TABLE $table ADD COLUMN hlc TEXT NOT NULL DEFAULT ''",
+              );
+              await customStatement(
+                "ALTER TABLE $table ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+              );
+            }
+            // 디바이스 ID 초기 생성
+            final deviceId = const Uuid().v4();
+            await customStatement(
+              "INSERT OR IGNORE INTO sync_meta (key, value, updated_at) "
+              "VALUES ('device_id', '$deviceId', ${DateTime.now().millisecondsSinceEpoch})",
+            );
           }
         },
       );

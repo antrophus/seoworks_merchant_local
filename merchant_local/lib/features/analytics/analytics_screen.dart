@@ -482,12 +482,18 @@ class _KpiCard extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Bar + Line 콤보 차트 (매출 막대 + 이익 선)
+// Bar + Line 콤보 차트 (3단 스택 막대 + 총이익 선)
 // ══════════════════════════════════════════════════════════════
 
 class _ComboChart extends ConsumerWidget {
   static const _leftPad = 48.0;
   static const _bottomPad = 28.0;
+  static const _rightPad = 32.0;
+
+  static const _colorCost = Color(0xFF8B5CF6);    // 판매가 배경 (violet-500)
+  static const _colorProfit = Color(0xFF22C55E);  // 순이익 (green-500)
+  static const _colorVat = Color(0xFFF59E0B);     // 부가세환급 (amber-500)
+  static const _colorLine = Color(0xFF1E293B);    // 총이익 선 (slate-800)
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -495,185 +501,244 @@ class _ComboChart extends ConsumerWidget {
     return _chartCard(
       context,
       title: '월별 매출 · 이익',
-      subtitle: '막대=매출  선=이익',
+      subtitle: '막대=정산구성  선=마진율',
       child: async.when(
         data: (data) {
           if (data.isEmpty) return _emptyState(context, '판매 데이터가 없습니다');
 
-          final maxSell = data.fold<double>(
-              0, (m, d) => max(m, (d['sell'] as int).toDouble()));
-          final minProfit = data.fold<double>(
-              0, (m, d) => min(m, (d['profit'] as int).toDouble()));
-          final chartMaxY = maxSell * 1.2;
-          final chartMinY = min(0.0, minProfit * 1.15);
+          final maxSettlement = data.fold<double>(
+              0, (m, d) => max(m, (d['settlement'] as int).toDouble()));
+          final chartMaxY = maxSettlement * 1.2;
+          const chartMinY = 0.0;
+
+          // 마진율 계산 (profit / settlement × 100)
+          final marginRates = data.map((d) {
+            final s = (d['settlement'] as int).toDouble();
+            final p = (d['profit'] as int).toDouble();
+            return s > 0 ? p / s * 100 : 0.0;
+          }).toList();
+          final maxMarginRate =
+              max(marginRates.fold<double>(1.0, max), 1.0);
+          // 마진율 0~max% → chartMaxY 5%~55% 구간에 매핑
+          double marginToY(double rate) =>
+              chartMaxY * 0.05 + (rate / maxMarginRate) * chartMaxY * 0.50;
 
           return SizedBox(
             height: 190,
-            child: Stack(
-              children: [
-                // ── 매출 막대 ──
-                BarChart(
-                  BarChartData(
-                    minY: chartMinY,
-                    maxY: chartMaxY,
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: false,
-                      horizontalInterval:
-                          chartMaxY > 0 ? chartMaxY / 4 : 1,
-                      getDrawingHorizontalLine: (_) => FlLine(
-                        color: AppColors.border.withAlpha(80),
-                        strokeWidth: 0.5,
+            child: LayoutBuilder(builder: (context, constraints) {
+              final plotWidth = constraints.maxWidth - _leftPad - _rightPad;
+              const plotHeight = 190.0 - _bottomPad;
+              final n = data.length;
+
+              // fl_chart spaceEvenly 실제 공식:
+              // gap = (plotWidth - n×barWidth) / (n+1)
+              // bar center[i] = leftPad + (i+1)×gap + (i+0.5)×barWidth
+              const barW = 14.0;
+              final gap = n > 0 ? (plotWidth - n * barW) / (n + 1) : 0.0;
+
+              // 각 막대 중심 픽셀 좌표 → 마진율 선
+              final linePoints = List.generate(n, (i) {
+                final px = _leftPad + (i + 1) * gap + (i + 0.5) * barW;
+                final py =
+                    plotHeight * (1 - marginToY(marginRates[i]) / chartMaxY);
+                return Offset(px, py);
+              });
+
+              return Stack(
+                children: [
+                  // ── 3단 스택 막대 ──
+                  BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceEvenly,
+                      minY: chartMinY,
+                      maxY: chartMaxY,
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        horizontalInterval: chartMaxY > 0 ? chartMaxY / 4 : 1,
+                        getDrawingHorizontalLine: (_) => FlLine(
+                          color: AppColors.border.withAlpha(80),
+                          strokeWidth: 0.5,
+                        ),
                       ),
-                    ),
-                    titlesData: FlTitlesData(
-                      topTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: _leftPad,
-                          getTitlesWidget: (val, _) => Text(
-                            _compact(val),
-                            style: const TextStyle(
-                              fontSize: 9,
-                              color: AppColors.textTertiary,
+                      titlesData: FlTitlesData(
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: _rightPad,
+                            interval: double.maxFinite,
+                            getTitlesWidget: (_, __) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: _leftPad,
+                            getTitlesWidget: (val, _) => Text(
+                              _compact(val),
+                              style: const TextStyle(
+                                  fontSize: 9, color: AppColors.textTertiary),
                             ),
                           ),
                         ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: _bottomPad,
+                            interval: 1,
+                            getTitlesWidget: (val, _) {
+                              final i = val.toInt();
+                              if (i < 0 || i >= data.length) {
+                                return const SizedBox();
+                              }
+                              final m = data[i]['month'] as String;
+                              return Text(
+                                m.length >= 7 ? m.substring(5) : m,
+                                style: const TextStyle(
+                                    fontSize: 9,
+                                    color: AppColors.textTertiary),
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: _bottomPad,
-                          interval: 1,
-                          getTitlesWidget: (val, _) {
-                            final i = val.toInt();
-                            if (i < 0 || i >= data.length) {
-                              return const SizedBox();
-                            }
-                            final m = data[i]['month'] as String;
-                            return Text(
-                              m.length >= 7 ? m.substring(5) : m,
-                              style: const TextStyle(
-                                fontSize: 9,
-                                color: AppColors.textTertiary,
-                              ),
+                      borderData: FlBorderData(show: false),
+                      barGroups: List.generate(data.length, (i) {
+                        final settlement =
+                            (data[i]['settlement'] as int).toDouble();
+                        final profit = (data[i]['profit'] as int).toDouble();
+                        final vat = (data[i]['vatRefund'] as int).toDouble();
+                        // 스택 구간: VAT(아래) | 순이익(중간) | 원가 배경(위, rod 색상)
+                        final safeVat = vat.clamp(0.0, settlement);
+                        final safeProfit =
+                            profit.clamp(0.0, settlement - safeVat);
+                        final vatEnd = safeVat;
+                        final profitEnd = safeVat + safeProfit;
+
+                        return BarChartGroupData(
+                          x: i,
+                          barRods: [
+                            BarChartRodData(
+                              toY: settlement,
+                              width: 14,
+                              // rod 전체를 보라로 채움 → 원가+수수료 배경 역할
+                              color: _colorCost,
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(3)),
+                              rodStackItems: [
+                                // VAT·순이익 구간을 아래부터 덮어씌움
+                                BarChartRodStackItem(0, vatEnd, _colorVat),
+                                BarChartRodStackItem(
+                                    vatEnd, profitEnd, _colorProfit),
+                              ],
+                            ),
+                          ],
+                        );
+                      }),
+                      barTouchData: BarTouchData(
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipItem: (group, _, rod, __) {
+                            final d = data[group.x];
+                            final profit = d['profit'] as int;
+                            final vat = d['vatRefund'] as int;
+                            final settlement = rod.toY.toInt();
+                            final marginRate = settlement > 0
+                                ? profit / settlement * 100
+                                : 0.0;
+                            return BarTooltipItem(
+                              '정산 ${_wonFmt.format(settlement)}원\n'
+                              '순이익 ${_wonFmt.format(profit)}원\n'
+                              'VAT환급 ${_wonFmt.format(vat)}원\n'
+                              '마진율 ${marginRate.toStringAsFixed(1)}%',
+                              const TextStyle(
+                                  color: Colors.white, fontSize: 10),
                             );
                           },
                         ),
                       ),
                     ),
-                    borderData: FlBorderData(show: false),
-                    barGroups: List.generate(data.length, (i) {
-                      final sell =
-                          (data[i]['sell'] as int).toDouble();
-                      final isLast = i == data.length - 1;
-                      return BarChartGroupData(
-                        x: i,
-                        barRods: [
-                          BarChartRodData(
-                            toY: sell,
-                            color: isLast
-                                ? AppColors.primary
-                                : AppColors.primary.withAlpha(130),
-                            width: 14,
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(3),
-                            ),
-                          ),
-                        ],
-                      );
-                    }),
-                    barTouchData: BarTouchData(
-                      touchTooltipData: BarTouchTooltipData(
-                        getTooltipItem: (group, _, rod, __) =>
-                            BarTooltipItem(
-                          '매출 ${_wonFmt.format(rod.toY.toInt())}원',
-                          const TextStyle(
-                              color: Colors.white, fontSize: 11),
+                  ),
+                  // ── 마진율 선 ──
+                  IgnorePointer(
+                    child: CustomPaint(
+                      painter: _ComboLinePainter(
+                          points: linePoints, color: _colorLine),
+                      size: Size(constraints.maxWidth, 190),
+                    ),
+                  ),
+                  // ── 우측 마진율 % 레이블 (0% / 중간% / 최대%) ──
+                  for (final rate in [0.0, maxMarginRate / 2, maxMarginRate])
+                    Positioned(
+                      right: 2,
+                      top: plotHeight * (1 - marginToY(rate) / chartMaxY) - 6,
+                      child: Text(
+                        '${rate.toStringAsFixed(0)}%',
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: _colorLine.withAlpha(160),
                         ),
                       ),
                     ),
-                  ),
-                ),
-                // ── 이익 선 (오버레이) ──
-                IgnorePointer(
-                  child: LineChart(
-                    LineChartData(
-                      minY: chartMinY,
-                      maxY: chartMaxY,
-                      gridData: const FlGridData(show: false),
-                      borderData: FlBorderData(show: false),
-                      titlesData: const FlTitlesData(
-                        topTitles: AxisTitles(
-                            sideTitles:
-                                SideTitles(showTitles: false)),
-                        rightTitles: AxisTitles(
-                            sideTitles:
-                                SideTitles(showTitles: false)),
-                        leftTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: false,
-                            reservedSize: _leftPad,
-                          ),
-                        ),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: false,
-                            reservedSize: _bottomPad,
-                          ),
-                        ),
-                      ),
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: List.generate(
-                            data.length,
-                            (i) => FlSpot(
-                              i.toDouble(),
-                              (data[i]['profit'] as int).toDouble(),
-                            ),
-                          ),
-                          color: AppColors.success,
-                          barWidth: 2,
-                          dotData: FlDotData(
-                            show: true,
-                            getDotPainter: (spot, _, __, ___) =>
-                                FlDotCirclePainter(
-                              radius: 3,
-                              color: AppColors.success,
-                              strokeWidth: 1.5,
-                              strokeColor: Colors.white,
-                            ),
-                          ),
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: AppColors.success.withAlpha(18),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+                ],
+              );
+            }),
           );
         },
         loading: () => _loadingState(),
         error: (e, _) => Text('$e',
             style: const TextStyle(color: AppColors.error, fontSize: 12)),
       ),
-      legend: Row(
+      legend: const Row(
         children: [
-          _LegendDot(color: AppColors.primary.withAlpha(180), label: '매출'),
-          const SizedBox(width: 12),
-          const _LegendLine(color: AppColors.success, label: '이익'),
+          _LegendDot(color: _colorCost, label: '판매가'),
+          SizedBox(width: 8),
+          _LegendDot(color: _colorProfit, label: '순이익'),
+          SizedBox(width: 8),
+          _LegendDot(color: _colorVat, label: 'VAT환급'),
+          SizedBox(width: 8),
+          _LegendLine(color: _colorLine, label: '마진율'),
         ],
       ),
     );
   }
+}
+
+// ── 총이익 선 CustomPainter ──
+class _ComboLinePainter extends CustomPainter {
+  final List<Offset> points;
+  final Color color;
+  const _ComboLinePainter({required this.points, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.length < 2) return;
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final path = Path()..moveTo(points[0].dx, points[0].dy);
+    for (int i = 1; i < points.length; i++) {
+      path.lineTo(points[i].dx, points[i].dy);
+    }
+    canvas.drawPath(path, linePaint);
+
+    final fillPaint = Paint()..color = color..style = PaintingStyle.fill;
+    final strokePaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    for (final p in points) {
+      canvas.drawCircle(p, 4, fillPaint);
+      canvas.drawCircle(p, 4, strokePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ComboLinePainter old) => old.points != points;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1175,7 +1240,7 @@ class _ExpandedContent extends ConsumerWidget {
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.textTertiary))),
                       Expanded(
-                          child: Text('플랫폼',
+                          child: Text('수익률',
                               style: TextStyle(
                                   fontSize: 9,
                                   fontWeight: FontWeight.w600,
@@ -1309,21 +1374,13 @@ class _SaleRow extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.errorBg,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: Text(
-                    record['platform'] as String,
-                    style: const TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.error),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                child: _MarginBar(
+                  platform: record['platform'] as String,
+                  margin: (record['purchasePrice'] as int) > 0
+                      ? (record['profit'] as int) /
+                          (record['purchasePrice'] as int) *
+                          100
+                      : 0.0,
                 ),
               ),
               SizedBox(
@@ -1351,6 +1408,71 @@ class _SaleRow extends StatelessWidget {
           ),
         ),
         Divider(height: 1, color: divColor),
+      ],
+    );
+  }
+}
+
+// ── 수익률 3구간 인바디 바 ──
+
+class _MarginBar extends StatelessWidget {
+  final String platform;
+  final double margin; // percent, 음수 가능
+
+  const _MarginBar({required this.platform, required this.margin});
+
+  @override
+  Widget build(BuildContext context) {
+    final isLow = margin < 0;
+    final isMid = margin >= 0 && margin < 20;
+    final isHigh = margin >= 20;
+
+    const red = Color(0xFFEF4444);
+    const amber = Color(0xFFF59E0B);
+    const green = Color(0xFF86EFAC);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          platform,
+          style: const TextStyle(fontSize: 8, color: AppColors.textTertiary),
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 6,
+                decoration: BoxDecoration(
+                  color: isLow ? red : red.withAlpha(40),
+                  borderRadius: const BorderRadius.horizontal(
+                      left: Radius.circular(2)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 1),
+            Expanded(
+              child: Container(
+                height: 6,
+                color: isMid ? amber : amber.withAlpha(40),
+              ),
+            ),
+            const SizedBox(width: 1),
+            Expanded(
+              child: Container(
+                height: 6,
+                decoration: BoxDecoration(
+                  color: isHigh ? green : green.withAlpha(40),
+                  borderRadius: const BorderRadius.horizontal(
+                      right: Radius.circular(2)),
+                ),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }

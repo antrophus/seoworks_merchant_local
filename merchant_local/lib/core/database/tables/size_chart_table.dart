@@ -14,6 +14,8 @@ class SizeCharts extends Table {
   TextColumn get uk => text().nullable()();
   TextColumn get jp => text().nullable()();
   TextColumn get createdAt => text().nullable()();
+  TextColumn get hlc => text().withDefault(const Constant(''))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
