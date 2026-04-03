@@ -30,7 +30,7 @@ Seoworks Merchant Local — Flutter + Dart + Drift(SQLite) + Riverpod + CRDT
 | Drive 동기화 가이드 | merchant_local/docs/google-drive-sync-guide.md |
 
 ## 서명 키
-키스토어: `merchant_local/android/app/upload-keystore.jks` / PW: `seoworks2026`
+키스토어: `merchant_local/android/app/upload-keystore.jks` / PW: 별도 보관 (CLAUDE.local.md 또는 개인 메모)
 APK 빌드: `cd merchant_local && flutter build apk --release`
 
 ## Claude API

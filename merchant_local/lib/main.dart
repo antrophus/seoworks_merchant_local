@@ -17,14 +17,14 @@ void main() async {
   db.hlcClock = clock;
 
   final driveService = GoogleDriveService();
-  final signedIn = await driveService.trySilentSignIn();
+  final connected = await driveService.connect();
 
   final engine = SyncEngine(db: db, driveService: driveService, clock: clock);
   final scheduler = SyncScheduler(engine);
 
-  if (signedIn) {
+  if (connected) {
     scheduler.start();
-    engine.sync(); // 초기 동기화 — await 불필요 (앱 시작 블로킹 방지)
+    engine.sync();
   }
 
   runApp(
