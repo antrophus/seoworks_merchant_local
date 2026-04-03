@@ -22,6 +22,9 @@ dependencies:
   # ── Google Drive 동기화 ──────────────────────────────
   google_sign_in: ^6.2.1
   googleapis: ^12.0.0
+  googleapis_auth: ^1.4.1
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
+  url_launcher: ^6.2.6
   http: ^1.2.0
 
   # ── POIZON Open API 연동 ─────────────────────────────

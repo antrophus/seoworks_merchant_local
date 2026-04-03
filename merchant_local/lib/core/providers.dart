@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'database/app_database.dart';
 import 'services/hlc_clock_service.dart';
+import 'services/google_drive_service.dart';
+import 'services/sync_scheduler.dart';
 import 'database/daos/sku_dao.dart';
 import 'database/daos/listing_dao.dart';
 import 'database/daos/order_dao.dart';
@@ -10,6 +12,7 @@ import 'database/daos/sale_dao.dart';
 import 'database/daos/master_dao.dart';
 import 'database/daos/sub_record_dao.dart';
 import 'api/poizon_client.dart';
+import 'services/sync_engine.dart';
 
 /// 앱 전역 Database 인스턴스
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -55,6 +58,38 @@ final masterDaoProvider = Provider<MasterDao>((ref) {
 
 final subRecordDaoProvider = Provider<SubRecordDao>((ref) {
   return ref.watch(databaseProvider).subRecordDao;
+});
+
+/// Google Drive 서비스 — 싱글턴 (로그인 상태 유지)
+final googleDriveServiceProvider = Provider<GoogleDriveService>((ref) {
+  return GoogleDriveService();
+});
+
+/// Sync Engine — main.dart에서 hlcClockProvider override 필수
+final syncEngineProvider = Provider<SyncEngine>((ref) {
+  return SyncEngine(
+    db: ref.watch(databaseProvider),
+    driveService: ref.watch(googleDriveServiceProvider),
+    clock: ref.watch(hlcClockProvider),
+  );
+});
+
+/// 자동 동기화 스케줄러 — main.dart에서 override 필수 (start/stop 제어)
+final syncSchedulerProvider = Provider<SyncScheduler>((ref) {
+  final engine = ref.watch(syncEngineProvider);
+  final scheduler = SyncScheduler(engine);
+  ref.onDispose(() => scheduler.stop());
+  return scheduler; // main.dart override 없을 경우 폴백 (미시작 상태)
+});
+
+/// 마지막 동기화 시각
+final lastSyncAtProvider = FutureProvider<DateTime?>((ref) async {
+  final db = ref.watch(databaseProvider);
+  final rows = await (db.select(db.syncMeta)
+        ..where((t) => t.key.equals('last_sync_at')))
+      .getSingleOrNull();
+  if (rows == null) return null;
+  return DateTime.tryParse(rows.value);
 });
 
 /// POIZON Client 설정 상태

@@ -29,26 +29,33 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
 
   /// item_id로 판매 조회
   Future<SaleData?> getByItemId(String itemId) =>
-      (select(sales)..where((t) => t.itemId.equals(itemId)))
+      (select(sales)
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false)))
           .getSingleOrNull();
 
   /// 플랫폼별 판매 목록
   Stream<List<SaleData>> watchByPlatform(String platform) =>
       (select(sales)
-            ..where((t) => t.platform.equals(platform))
+            ..where((t) =>
+                t.platform.equals(platform) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
           .watch();
 
   /// 판매 등록 (수수료 + 정산금 자동 계산)
   Future<void> insertSale(SalesCompanion entry) async {
     final computed = await _computeSettlement(entry);
-    await into(sales).insert(computed);
+    await into(sales).insert(
+      computed.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+    );
   }
 
   /// 판매 수정 (수수료 + 정산금 재계산)
   Future<void> updateSale(String id, SalesCompanion entry) async {
     final computed = await _computeSettlement(entry);
-    await (update(sales)..where((t) => t.id.equals(id))).write(computed);
+    await (update(sales)..where((t) => t.id.equals(id))).write(
+      computed.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+    );
   }
 
   /// 정산금 계산 로직 (calculate_sale_settlement 트리거 이식)
@@ -123,9 +130,9 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
 
   /// 조정금 합계 동기화 + 정산금 재계산
   Future<void> syncAdjustmentTotal(String saleId) async {
-    // SUM(amount)
+    // SUM(amount) — 삭제되지 않은 조정금만
     final totalQuery = customSelect(
-      'SELECT COALESCE(SUM(amount), 0) as total FROM sale_adjustments WHERE sale_id = ?',
+      'SELECT COALESCE(SUM(amount), 0) as total FROM sale_adjustments WHERE sale_id = ? AND is_deleted = 0',
       variables: [Variable.withString(saleId)],
       readsFrom: {saleAdjustments},
     );
@@ -151,22 +158,31 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
 
   /// 조정금 추가
   Future<void> addAdjustment(SaleAdjustmentsCompanion entry) async {
-    await into(saleAdjustments).insert(entry);
+    await into(saleAdjustments).insert(
+      entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+    );
     if (entry.saleId.present) {
       await syncAdjustmentTotal(entry.saleId.value);
     }
   }
 
-  /// 조정금 삭제
+  /// 조정금 소프트 삭제
   Future<void> deleteAdjustment(String adjustmentId, String saleId) async {
-    await (delete(saleAdjustments)..where((t) => t.id.equals(adjustmentId)))
-        .go();
+    await (update(saleAdjustments)
+          ..where((t) => t.id.equals(adjustmentId)))
+        .write(SaleAdjustmentsCompanion(
+      isDeleted: const Value(true),
+      hlc: Value(db.hlcClock?.increment().toString() ?? ''),
+    ));
     await syncAdjustmentTotal(saleId);
   }
 
   /// 조정금 목록
   Future<List<SaleAdjustmentData>> getAdjustments(String saleId) =>
-      (select(saleAdjustments)..where((t) => t.saleId.equals(saleId))).get();
+      (select(saleAdjustments)
+            ..where((t) =>
+                t.saleId.equals(saleId) & t.isDeleted.equals(false)))
+          .get();
 
   /// 판매 내역 목록 (아이템+상품 JOIN, 필터 지원)
   Future<List<SaleWithItem>> getSalesWithItems({
@@ -192,6 +208,9 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       'LISTED',
       'POIZON_STORAGE',
     ]));
+
+    query.where(sales.isDeleted.equals(false));
+    query.where(items.isDeleted.equals(false));
 
     if (platform != null) {
       query.where(sales.platform.equals(platform));
@@ -220,7 +239,7 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
     String? dateFrom,
     String? dateTo,
   }) async {
-    var where = "WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')";
+    var where = "WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED') AND s.is_deleted = 0 AND i.is_deleted = 0";
     final vars = <Variable>[];
     if (platform != null) {
       where += ' AND s.platform = ?';
@@ -294,6 +313,8 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       LEFT JOIN purchases p ON p.item_id = s.item_id
       WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
         AND COALESCE(s.settled_at, s.sale_date) IS NOT NULL
+        AND s.is_deleted = 0
+        AND i.is_deleted = 0
       $where
       GROUP BY month ORDER BY month
       ''',
@@ -332,6 +353,8 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       FROM sales s
       JOIN items i ON i.id = s.item_id
       WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
+        AND s.is_deleted = 0
+        AND i.is_deleted = 0
       $where
       GROUP BY s.platform ORDER BY total_sell DESC
       ''',
@@ -378,6 +401,8 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
         AND s.settlement_amount IS NOT NULL
         AND p.purchase_price IS NOT NULL AND p.purchase_price > 0
+        AND s.is_deleted = 0
+        AND i.is_deleted = 0
       $where
       GROUP BY pr.model_code, pr.model_name
       ORDER BY profit $order
@@ -411,6 +436,9 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       'DEFECT_SETTLED',
     ]));
 
+    query.where(sales.isDeleted.equals(false));
+    query.where(items.isDeleted.equals(false));
+
     if (platform != null) {
       query.where(sales.platform.equals(platform));
     }
@@ -439,7 +467,8 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
   Future<Map<String, SaleData>> getByItemIds(List<String> itemIds) async {
     if (itemIds.isEmpty) return {};
     final results = await (select(sales)
-          ..where((t) => t.itemId.isIn(itemIds)))
+          ..where((t) =>
+              t.itemId.isIn(itemIds) & t.isDeleted.equals(false)))
         .get();
     return {for (final s in results) s.itemId: s};
   }
@@ -490,6 +519,8 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       LEFT JOIN purchases p ON p.item_id = s.item_id
       WHERE i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
         AND s.settlement_amount IS NOT NULL
+        AND s.is_deleted = 0
+        AND i.is_deleted = 0
       $where
       GROUP BY brand_name
       ORDER BY profit DESC
@@ -543,6 +574,8 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
       WHERE pr.model_code = ?
         AND i.current_status IN ('SOLD','SETTLED','DEFECT_SOLD','DEFECT_SETTLED')
         AND s.settlement_amount IS NOT NULL
+        AND s.is_deleted = 0
+        AND i.is_deleted = 0
       $where
       ORDER BY date DESC
       LIMIT ?

@@ -18,6 +18,8 @@ secrets.dart
 *_secrets.dart
 google-services.json
 GoogleService-Info.plist
+client_secret*.json
+google_oauth_secrets.dart
 
 # ── Android ─────────────────────────────────────────────────
 android/.gradle/
@@ -51,3 +53,5 @@ desktop.ini
 # ── Claude Code (개인 설정) ───────────────────────────────────
 CLAUDE.local.md
 .claude/settings.local.json
+personal_notes/
+

@@ -30,13 +30,15 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
   // ── StatusLogs ──
   Future<List<StatusLogData>> getStatusLogs(String itemId) =>
       (select(statusLogs)
-            ..where((t) => t.itemId.equals(itemId))
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.desc(t.changedAt)]))
           .get();
 
   /// 최근 상태 변경 로그 (대시보드용)
   Future<List<StatusLogData>> getRecentStatusLogs({int limit = 8}) =>
       (select(statusLogs)
+            ..where((t) => t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.desc(t.changedAt)])
             ..limit(limit))
           .get();
@@ -51,7 +53,8 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
   Future<List<InspectionRejectionData>> getInspectionRejections(
           String itemId) =>
       (select(inspectionRejections)
-            ..where((t) => t.itemId.equals(itemId))
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.returnSeq)]))
           .get();
 
@@ -59,16 +62,19 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
   Future<void> addInspectionRejection(
       InspectionRejectionsCompanion entry) async {
     final itemId = entry.itemId.value;
-    // MAX(return_seq) + 1
+    // MAX(return_seq) + 1 — 삭제되지 않은 항목 기준
     final maxSeq = await customSelect(
-      'SELECT COALESCE(MAX(return_seq), 0) as max_seq FROM inspection_rejections WHERE item_id = ?',
+      'SELECT COALESCE(MAX(return_seq), 0) as max_seq FROM inspection_rejections WHERE item_id = ? AND is_deleted = 0',
       variables: [Variable.withString(itemId)],
       readsFrom: {inspectionRejections},
     ).getSingle();
     final nextSeq = maxSeq.read<int>('max_seq') + 1;
 
     await into(inspectionRejections).insert(
-      entry.copyWith(returnSeq: Value(nextSeq)),
+      entry.copyWith(
+        returnSeq: Value(nextSeq),
+        hlc: Value(db.hlcClock?.increment().toString() ?? ''),
+      ),
     );
   }
 
@@ -83,12 +89,15 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
   // ── Repairs ──
   Future<List<RepairData>> getRepairs(String itemId) =>
       (select(repairs)
-            ..where((t) => t.itemId.equals(itemId))
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.desc(t.startedAt)]))
           .get();
 
   Future<void> insertRepair(RepairsCompanion entry) =>
-      into(repairs).insert(entry);
+      into(repairs).insert(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   Future<void> completeRepair(
       String repairId, String outcome, int? cost, String? note) async {
@@ -98,6 +107,7 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
         outcome: Value(outcome),
         repairCost: Value(cost),
         repairNote: Value(note),
+        hlc: Value(db.hlcClock?.increment().toString() ?? ''),
       ),
     );
   }
@@ -111,22 +121,27 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
   // ── Shipments ──
   Future<List<ShipmentData>> getShipments(String itemId) =>
       (select(shipments)
-            ..where((t) => t.itemId.equals(itemId))
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.seq)]))
           .get();
 
   /// 배송 등록 (순번 자동 생성)
   Future<void> addShipment(ShipmentsCompanion entry) async {
     final itemId = entry.itemId.value;
+    // MAX(seq) + 1 — 삭제되지 않은 항목 기준
     final maxSeq = await customSelect(
-      'SELECT COALESCE(MAX(seq), 0) as max_seq FROM shipments WHERE item_id = ?',
+      'SELECT COALESCE(MAX(seq), 0) as max_seq FROM shipments WHERE item_id = ? AND is_deleted = 0',
       variables: [Variable.withString(itemId)],
       readsFrom: {shipments},
     ).getSingle();
     final nextSeq = maxSeq.read<int>('max_seq') + 1;
 
     await into(shipments).insert(
-      entry.copyWith(seq: Value(nextSeq)),
+      entry.copyWith(
+        seq: Value(nextSeq),
+        hlc: Value(db.hlcClock?.increment().toString() ?? ''),
+      ),
     );
   }
 
@@ -140,7 +155,10 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
   Future<void> updateShipmentsOutgoingDate(
       String itemId, String outgoingDate) async {
     await (update(shipments)..where((t) => t.itemId.equals(itemId))).write(
-      ShipmentsCompanion(outgoingDate: Value(outgoingDate)),
+      ShipmentsCompanion(
+        outgoingDate: Value(outgoingDate),
+        hlc: Value(db.hlcClock?.increment().toString() ?? ''),
+      ),
     );
   }
 
@@ -150,7 +168,10 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
     await (update(shipments)
           ..where((t) => t.trackingNumber.equals(trackingNumber)))
         .write(
-      ShipmentsCompanion(outgoingDate: Value(outgoingDate)),
+      ShipmentsCompanion(
+        outgoingDate: Value(outgoingDate),
+        hlc: Value(db.hlcClock?.increment().toString() ?? ''),
+      ),
     );
   }
 
@@ -158,7 +179,9 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
   Future<List<ShipmentData>> getShipmentsByTracking(
       String trackingNumber) async {
     return (select(shipments)
-          ..where((t) => t.trackingNumber.equals(trackingNumber)))
+          ..where((t) =>
+              t.trackingNumber.equals(trackingNumber) &
+              t.isDeleted.equals(false)))
         .get();
   }
 
@@ -168,13 +191,15 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
     final result = await customSelect(
       '''
       SELECT id FROM shipments
-      WHERE id NOT IN (
+      WHERE is_deleted = 0
+        AND id NOT IN (
         SELECT id FROM (
           SELECT id, ROW_NUMBER() OVER (
             PARTITION BY item_id, tracking_number
             ORDER BY seq DESC
           ) AS rn
           FROM shipments
+          WHERE is_deleted = 0
         ) sub
         WHERE rn = 1
       )
@@ -185,18 +210,31 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
     if (result.isEmpty) return 0;
 
     final idsToDelete = result.map((r) => r.read<String>('id')).toList();
-    await (delete(shipments)..where((t) => t.id.isIn(idsToDelete))).go();
+    final hlcValue = db.hlcClock?.increment().toString() ?? '';
+    await (update(shipments)..where((t) => t.id.isIn(idsToDelete))).write(
+      ShipmentsCompanion(
+        isDeleted: const Value(true),
+        hlc: Value(hlcValue),
+      ),
+    );
     return idsToDelete.length;
   }
 
-  /// 개별 shipment 삭제
+  /// 개별 shipment 소프트 삭제
   Future<void> deleteShipment(String id) async {
-    await (delete(shipments)..where((t) => t.id.equals(id))).go();
+    await (update(shipments)..where((t) => t.id.equals(id))).write(
+      ShipmentsCompanion(
+        isDeleted: const Value(true),
+        hlc: Value(db.hlcClock?.increment().toString() ?? ''),
+      ),
+    );
   }
 
   // ── SupplierReturns ──
   Future<void> insertSupplierReturn(SupplierReturnsCompanion entry) =>
-      into(supplierReturns).insert(entry);
+      into(supplierReturns).insert(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   Future<void> insertAllSupplierReturns(
       List<SupplierReturnsCompanion> entries) async {
@@ -207,7 +245,9 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
 
   // ── OrderCancellations ──
   Future<void> insertOrderCancellation(OrderCancellationsCompanion entry) =>
-      into(orderCancellations).insert(entry);
+      into(orderCancellations).insert(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   Future<void> insertAllOrderCancellations(
       List<OrderCancellationsCompanion> entries) async {
@@ -219,7 +259,9 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
 
   // ── SampleUsages ──
   Future<void> insertSampleUsage(SampleUsagesCompanion entry) =>
-      into(sampleUsages).insert(entry);
+      into(sampleUsages).insert(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   Future<void> insertAllSampleUsages(
       List<SampleUsagesCompanion> entries) async {

@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
+import '../services/hlc_clock_service.dart';
 
 // ── 마스터 테이블 ──
 import 'tables/brand_table.dart';
@@ -90,6 +91,9 @@ part 'app_database.g.dart';
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
+
+  /// HLC 시계 — main.dart에서 초기화 후 주입
+  HlcClockService? hlcClock;
 
   @override
   int get schemaVersion => 5;

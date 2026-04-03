@@ -16,16 +16,24 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
 
   // ── Brands ──
   Future<List<Brand>> getAllBrands() =>
-      (select(brands)..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
+      (select(brands)
+            ..where((t) => t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+          .get();
 
   Stream<List<Brand>> watchAllBrands() =>
-      (select(brands)..orderBy([(t) => OrderingTerm.asc(t.name)])).watch();
+      (select(brands)
+            ..where((t) => t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+          .watch();
 
   Future<Brand?> getBrandById(String id) =>
       (select(brands)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   Future<void> upsertBrand(BrandsCompanion entry) =>
-      into(brands).insertOnConflictUpdate(entry);
+      into(brands).insertOnConflictUpdate(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   Future<void> insertAllBrands(List<BrandsCompanion> entries) async {
     await batch((b) {
@@ -35,16 +43,24 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
 
   // ── Sources ──
   Future<List<Source>> getAllSources() =>
-      (select(sources)..orderBy([(t) => OrderingTerm.asc(t.name)])).get();
+      (select(sources)
+            ..where((t) => t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+          .get();
 
   Future<Source?> getSourceById(String id) =>
       (select(sources)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   Stream<List<Source>> watchAllSources() =>
-      (select(sources)..orderBy([(t) => OrderingTerm.asc(t.name)])).watch();
+      (select(sources)
+            ..where((t) => t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.asc(t.name)]))
+          .watch();
 
   Future<void> upsertSource(SourcesCompanion entry) =>
-      into(sources).insertOnConflictUpdate(entry);
+      into(sources).insertOnConflictUpdate(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   Future<void> insertAllSources(List<SourcesCompanion> entries) async {
     await batch((b) {
@@ -54,27 +70,37 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
 
   // ── Products ──
   Future<List<Product>> getAllProducts() =>
-      (select(products)..orderBy([(t) => OrderingTerm.asc(t.modelCode)])).get();
+      (select(products)
+            ..where((t) => t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.asc(t.modelCode)]))
+          .get();
 
   Stream<List<Product>> watchAllProducts() =>
-      (select(products)..orderBy([(t) => OrderingTerm.asc(t.modelCode)]))
+      (select(products)
+            ..where((t) => t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.asc(t.modelCode)]))
           .watch();
 
   Future<Product?> getProductById(String id) =>
       (select(products)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   Future<Product?> getProductByModelCode(String modelCode) =>
-      (select(products)..where((t) => t.modelCode.equals(modelCode)))
+      (select(products)
+            ..where((t) =>
+                t.modelCode.equals(modelCode) & t.isDeleted.equals(false)))
           .getSingleOrNull();
 
   Future<List<Product>> searchProducts(String query) =>
       (select(products)
             ..where((t) =>
-                t.modelCode.like('%$query%') | t.modelName.like('%$query%')))
+                (t.modelCode.like('%$query%') | t.modelName.like('%$query%')) &
+                t.isDeleted.equals(false)))
           .get();
 
   Future<void> upsertProduct(ProductsCompanion entry) =>
-      into(products).insertOnConflictUpdate(entry);
+      into(products).insertOnConflictUpdate(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   Future<void> insertAllProducts(List<ProductsCompanion> entries) async {
     await batch((b) {
@@ -86,7 +112,7 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
   Future<Map<String, Product>> getProductsByIds(List<String> ids) async {
     if (ids.isEmpty) return {};
     final results = await (select(products)
-          ..where((t) => t.id.isIn(ids)))
+          ..where((t) => t.id.isIn(ids) & t.isDeleted.equals(false)))
         .get();
     return {for (final p in results) p.id: p};
   }
@@ -100,14 +126,17 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
   // ── Sources (filtered) ──
   Future<List<Source>> getSourcesByType(String type) =>
       (select(sources)
-            ..where((t) => t.type.equals(type))
+            ..where((t) =>
+                t.type.equals(type) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.name)]))
           .get();
 
   // ── SizeCharts ──
   Future<List<SizeChartData>> getSizeChartsByBrand(String brandName) =>
       (select(sizeCharts)
-            ..where((t) => t.brand.equals(brandName.toUpperCase()))
+            ..where((t) =>
+                t.brand.equals(brandName.toUpperCase()) &
+                t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.kr)]))
           .get();
 
@@ -116,14 +145,15 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
       (select(sizeCharts)
             ..where((t) =>
                 t.brand.equals(brandName.toUpperCase()) &
-                t.target.equals(target))
+                t.target.equals(target) &
+                t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.kr)]))
           .get();
 
   /// 해당 브랜드의 사이즈차트에 존재하는 target 목록 (MEN, WOMEN, KIDS)
   Future<List<String>> getSizeChartTargets(String brandName) async {
     final results = await customSelect(
-      'SELECT DISTINCT target FROM size_charts WHERE brand = ? ORDER BY target',
+      'SELECT DISTINCT target FROM size_charts WHERE brand = ? AND is_deleted = 0 ORDER BY target',
       variables: [Variable.withString(brandName.toUpperCase())],
       readsFrom: {sizeCharts},
     ).get();
@@ -138,10 +168,14 @@ class MasterDao extends DatabaseAccessor<AppDatabase> with _$MasterDaoMixin {
 
   // ── PlatformFeeRules ──
   Future<List<PlatformFeeRuleData>> getAllFeeRules() =>
-      select(platformFeeRules).get();
+      (select(platformFeeRules)
+            ..where((t) => t.isDeleted.equals(false)))
+          .get();
 
   Future<void> upsertFeeRule(PlatformFeeRulesCompanion entry) =>
-      into(platformFeeRules).insertOnConflictUpdate(entry);
+      into(platformFeeRules).insertOnConflictUpdate(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   Future<void> insertAllFeeRules(
       List<PlatformFeeRulesCompanion> entries) async {

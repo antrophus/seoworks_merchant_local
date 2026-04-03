@@ -12,19 +12,25 @@ class PurchaseDao extends DatabaseAccessor<AppDatabase>
 
   /// item_id로 매입 조회
   Future<PurchaseData?> getByItemId(String itemId) =>
-      (select(purchases)..where((t) => t.itemId.equals(itemId)))
+      (select(purchases)
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false)))
           .getSingleOrNull();
 
   /// 매입 등록 (부가세 환급액 자동 계산)
   Future<void> insertPurchase(PurchasesCompanion entry) async {
     final computed = await _computeVatRefundable(entry);
-    await into(purchases).insert(computed);
+    await into(purchases).insert(
+      computed.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+    );
   }
 
   /// 매입 수정 (부가세 환급액 재계산)
   Future<void> updatePurchase(String id, PurchasesCompanion entry) async {
     final computed = await _computeVatRefundable(entry);
-    await (update(purchases)..where((t) => t.id.equals(id))).write(computed);
+    await (update(purchases)..where((t) => t.id.equals(id))).write(
+      computed.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+    );
   }
 
   /// 부가세 환급액 계산 로직
@@ -58,7 +64,7 @@ class PurchaseDao extends DatabaseAccessor<AppDatabase>
   Future<Map<String, PurchaseData>> getByItemIds(List<String> itemIds) async {
     if (itemIds.isEmpty) return {};
     final results = await (select(purchases)
-          ..where((t) => t.itemId.isIn(itemIds)))
+          ..where((t) => t.itemId.isIn(itemIds) & t.isDeleted.equals(false)))
         .get();
     return {for (final p in results) p.itemId: p};
   }

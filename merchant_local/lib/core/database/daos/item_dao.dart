@@ -41,24 +41,31 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
 
   /// 전체 아이템 목록
   Future<List<ItemData>> getAll() =>
-      (select(items)..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
+      (select(items)
+            ..where((t) => t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+          .get();
 
   /// 아이템 스트림
   Stream<List<ItemData>> watchAll() =>
-      (select(items)..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+      (select(items)
+            ..where((t) => t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
           .watch();
 
   /// 상태별 필터링
   Stream<List<ItemData>> watchByStatus(String status) =>
       (select(items)
-            ..where((t) => t.currentStatus.equals(status))
+            ..where((t) =>
+                t.currentStatus.equals(status) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
           .watch();
 
   /// 여러 상태로 필터링
   Stream<List<ItemData>> watchByStatuses(List<String> statuses) =>
       (select(items)
-            ..where((t) => t.currentStatus.isIn(statuses))
+            ..where((t) =>
+                t.currentStatus.isIn(statuses) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
           .watch();
 
@@ -72,17 +79,22 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
 
   /// SKU로 조회
   Future<ItemData?> getBySku(String sku) =>
-      (select(items)..where((t) => t.sku.equals(sku))).getSingleOrNull();
+      (select(items)
+            ..where((t) => t.sku.equals(sku) & t.isDeleted.equals(false)))
+          .getSingleOrNull();
 
   /// 바코드로 조회
   Future<ItemData?> getByBarcode(String barcode) =>
-      (select(items)..where((t) => t.barcode.equals(barcode)))
+      (select(items)
+            ..where((t) =>
+                t.barcode.equals(barcode) & t.isDeleted.equals(false)))
           .getSingleOrNull();
 
   /// 상품 모델별 조회
   Future<List<ItemData>> getByProductId(String productId) =>
       (select(items)
-            ..where((t) => t.productId.equals(productId))
+            ..where((t) =>
+                t.productId.equals(productId) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
           .get();
 
@@ -94,7 +106,8 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
     query.where(
       products.modelCode.equals(modelCode) &
           items.currentStatus.equals('OFFICE_STOCK') &
-          items.isPersonal.equals(false),
+          items.isPersonal.equals(false) &
+          items.isDeleted.equals(false),
     );
     if (sizeKr != null) {
       query.where(items.sizeKr.equals(sizeKr));
@@ -128,12 +141,14 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
         );
       }
       final now = DateTime.now().toIso8601String();
+      final hlcValue = db.hlcClock?.increment().toString() ?? '';
 
       // items 상태 업데이트
       await (update(items)..where((t) => t.id.equals(itemId))).write(
         ItemsCompanion(
           currentStatus: Value(newStatus),
           updatedAt: Value(now),
+          hlc: Value(hlcValue),
         ),
       );
 
@@ -145,17 +160,22 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
         newStatus: newStatus,
         note: Value(note),
         changedAt: Value(now),
+        hlc: Value(db.hlcClock?.increment().toString() ?? ''),
       ));
     });
   }
 
   /// Insert
   Future<void> insertItem(ItemsCompanion entry) =>
-      into(items).insert(entry);
+      into(items).insert(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   /// Update
   Future<void> updateItem(String id, ItemsCompanion entry) =>
-      (update(items)..where((t) => t.id.equals(id))).write(entry);
+      (update(items)..where((t) => t.id.equals(id))).write(
+        entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+      );
 
   /// 일괄 Insert (데이터 임포트용)
   Future<void> insertAll(List<ItemsCompanion> entries) async {
@@ -170,10 +190,11 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
     final result = select(items).join([
       innerJoin(products, products.id.equalsExp(items.productId)),
     ]);
-    var condition = items.sku.like(pattern) |
-        items.barcode.like(pattern) |
-        products.modelCode.like(pattern) |
-        products.modelName.like(pattern);
+    var condition = (items.sku.like(pattern) |
+            items.barcode.like(pattern) |
+            products.modelCode.like(pattern) |
+            products.modelName.like(pattern)) &
+        items.isDeleted.equals(false);
     if (statuses != null && statuses.isNotEmpty) {
       condition = condition & items.currentStatus.isIn(statuses);
     }
@@ -191,7 +212,8 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
           ..where((t) =>
               t.productId.equals(productId) &
               t.sizeKr.equals(sizeKr) &
-              t.currentStatus.equals(settled).not()))
+              t.currentStatus.equals(settled).not() &
+              t.isDeleted.equals(false)))
         .get();
     return result.length;
   }
@@ -206,7 +228,8 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
       (items.barcode.isNull() | items.barcode.equals('')) &
           (items.sku.like(pattern) |
               products.modelCode.like(pattern) |
-              products.modelName.like(pattern)),
+              products.modelName.like(pattern)) &
+          items.isDeleted.equals(false),
     );
     result.orderBy([OrderingTerm.desc(items.createdAt)]);
     result.limit(30);
@@ -217,14 +240,15 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
   /// 상품(productId) 기준 전체 아이템 조회 (사이즈별 재고 등)
   Future<List<ItemData>> getAllByProductId(String productId) =>
       (select(items)
-            ..where((t) => t.productId.equals(productId))
+            ..where((t) =>
+                t.productId.equals(productId) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.sizeKr)]))
           .get();
 
   /// 대시보드 통계 — 상태별 카운트
   Future<Map<String, int>> getStatusCounts() async {
     final query = customSelect(
-      'SELECT current_status, COUNT(*) as cnt FROM items GROUP BY current_status',
+      'SELECT current_status, COUNT(*) as cnt FROM items WHERE is_deleted = 0 GROUP BY current_status',
       readsFrom: {items},
     );
     final results = await query.get();
@@ -243,6 +267,7 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
       INNER JOIN products p ON p.id = i.product_id
       INNER JOIN brands b ON b.id = p.brand_id
       WHERE i.current_status NOT IN ('ORDER_CANCELLED', 'DISPOSED')
+        AND i.is_deleted = 0
       GROUP BY b.id, b.name
       ORDER BY cnt DESC
       LIMIT ?
@@ -268,6 +293,7 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
       SELECT COUNT(*) AS cnt FROM items
       WHERE current_status = 'IN_INSPECTION'
         AND updated_at < ?
+        AND is_deleted = 0
       ''',
       variables: [Variable.withString(cutoff)],
       readsFrom: {items},
@@ -292,6 +318,7 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
       LEFT JOIN purchases p ON p.item_id = i.id
       LEFT JOIN sales s ON s.item_id = i.id
       WHERE i.current_status NOT IN ('ORDER_CANCELLED', 'DISPOSED')
+        AND i.is_deleted = 0
       ''',
       readsFrom: {items},
     ).getSingle();
