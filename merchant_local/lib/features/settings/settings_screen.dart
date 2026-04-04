@@ -585,8 +585,41 @@ class _GoogleDriveSyncSection extends ConsumerStatefulWidget {
 class _GoogleDriveSyncSectionState
     extends ConsumerState<_GoogleDriveSyncSection> {
   bool _isSyncing = false;
+  bool _isSigningIn = false;
   String? _syncMessage;
   bool? _syncSuccess;
+
+  Future<void> _signIn() async {
+    setState(() => _isSigningIn = true);
+    try {
+      final driveService = ref.read(googleDriveServiceProvider);
+      final ok = await driveService.signIn();
+      if (mounted) {
+        if (ok) {
+          // 로그인 성공 → 동기화 스케줄러 시작
+          ref.read(syncSchedulerProvider).start();
+          ref.read(syncEngineProvider).sync();
+        }
+        setState(() => _isSigningIn = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSigningIn = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('로그인 실패: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _signOut() async {
+    ref.read(googleDriveServiceProvider).signOut();
+    ref.read(syncSchedulerProvider).stop();
+    setState(() {
+      _syncMessage = null;
+      _syncSuccess = null;
+    });
+  }
 
   Future<void> _syncNow() async {
     setState(() {
@@ -629,8 +662,9 @@ class _GoogleDriveSyncSectionState
 
   @override
   Widget build(BuildContext context) {
+    final driveService = ref.watch(googleDriveServiceProvider);
+    final isConnected = driveService.isSignedIn;
     final lastSync = ref.watch(lastSyncAtProvider);
-    final isConnected = ref.read(googleDriveServiceProvider).isSignedIn;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -642,6 +676,8 @@ class _GoogleDriveSyncSectionState
               ),
         ),
         const SizedBox(height: 8),
+
+        // ── 연결 상태 표시 ──
         Row(
           children: [
             Icon(
@@ -650,12 +686,21 @@ class _GoogleDriveSyncSectionState
               color: isConnected ? Colors.green : Colors.grey,
             ),
             const SizedBox(width: 6),
-            Text(
-              isConnected ? '서비스 계정 연결됨' : '연결 안 됨',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: isConnected ? Colors.green : Colors.grey,
-                  ),
+            Expanded(
+              child: Text(
+                isConnected
+                    ? '${driveService.userEmail ?? "Google 계정"} 연결됨'
+                    : '연결 안 됨',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: isConnected ? Colors.green : Colors.grey,
+                    ),
+              ),
             ),
+            if (isConnected)
+              TextButton(
+                onPressed: _signOut,
+                child: const Text('로그아웃'),
+              ),
           ],
         ),
         const SizedBox(height: 4),
@@ -671,20 +716,40 @@ class _GoogleDriveSyncSectionState
           error: (_, __) => const SizedBox.shrink(),
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: (isConnected && !_isSyncing) ? _syncNow : null,
-            icon: _isSyncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.sync, size: 18),
-            label: Text(_isSyncing ? '동기화 중...' : '지금 동기화'),
+
+        if (!isConnected)
+          // ── 로그인 버튼 ──
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _isSigningIn ? null : _signIn,
+              icon: _isSigningIn
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.login, size: 18),
+              label: Text(_isSigningIn ? '로그인 중...' : 'Google 계정으로 로그인'),
+            ),
+          )
+        else
+          // ── 동기화 버튼 ──
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _isSyncing ? null : _syncNow,
+              icon: _isSyncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.sync, size: 18),
+              label: Text(_isSyncing ? '동기화 중...' : '지금 동기화'),
+            ),
           ),
-        ),
+
         if (_syncMessage != null) ...[
           const SizedBox(height: 8),
           Text(

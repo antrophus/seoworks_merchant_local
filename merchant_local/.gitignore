@@ -32,8 +32,9 @@ android/key.properties
 *.keystore
 *.jks
 
-# 빌드 로그
+# 로그 / 임시 파일
 *.log
+*.txt
 
 # Windows
 windows/flutter/ephemeral/
