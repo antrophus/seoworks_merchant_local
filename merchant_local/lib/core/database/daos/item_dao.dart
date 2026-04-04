@@ -207,15 +207,13 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
 
   /// 동일 모델 + 동일 사이즈의 미정산 재고 수량
   Future<int> countByProductAndSize(String productId, String sizeKr) async {
-    const settled = 'SETTLED';
-    final result = await (select(items)
-          ..where((t) =>
-              t.productId.equals(productId) &
-              t.sizeKr.equals(sizeKr) &
-              t.currentStatus.equals(settled).not() &
-              t.isDeleted.equals(false)))
-        .get();
-    return result.length;
+    final result = await customSelect(
+      "SELECT COUNT(*) AS cnt FROM items "
+      "WHERE product_id = ? AND size_kr = ? AND current_status != 'SETTLED' AND is_deleted = 0",
+      variables: [Variable.withString(productId), Variable.withString(sizeKr)],
+      readsFrom: {items},
+    ).getSingle();
+    return result.read<int>('cnt');
   }
 
   /// 바코드 미등록 아이템 검색 (SKU / 모델코드 / 모델명)

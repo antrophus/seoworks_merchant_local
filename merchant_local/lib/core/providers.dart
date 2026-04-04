@@ -124,12 +124,8 @@ final itemsProvider = StreamProvider<List<ItemData>>((ref) {
 });
 
 final itemStatusCountsProvider = FutureProvider<Map<String, int>>((ref) async {
-  final items = await ref.watch(itemsProvider.future);
-  final counts = <String, int>{};
-  for (final item in items) {
-    counts[item.currentStatus] = (counts[item.currentStatus] ?? 0) + 1;
-  }
-  return counts;
+  ref.watch(itemsProvider); // 변경 감지 트리거
+  return ref.read(itemDaoProvider).getStatusCounts();
 });
 
 /// 대시보드 자산 개요

@@ -32,6 +32,19 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   int? _subIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // 대시보드에서 서브탭 오버라이드가 설정된 경우 적용
+    final subOverride = ref.read(inventorySubIndexOverride);
+    if (subOverride != null) {
+      _subIndex = subOverride;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(inventorySubIndexOverride.notifier).state = null;
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     _searchFocus.dispose();

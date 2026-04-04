@@ -218,10 +218,11 @@ class SyncEngine {
           _manifestFile, jsonEncode(newManifest.toJson()));
 
       // 8. SyncMeta에 마지막 동기화 시각 저장
+      final now = DateTime.now();
       await db.customStatement(
         "INSERT OR REPLACE INTO sync_meta (key, value, updated_at) "
-        "VALUES ('last_sync_at', '${DateTime.now().toIso8601String()}', "
-        "${DateTime.now().millisecondsSinceEpoch})",
+        "VALUES ('last_sync_at', ?, ?)",
+        [now.toIso8601String(), now.millisecondsSinceEpoch],
       );
 
       debugPrint(

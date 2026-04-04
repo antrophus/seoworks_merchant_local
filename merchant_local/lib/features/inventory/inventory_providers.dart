@@ -175,9 +175,11 @@ Widget productImage(String? url, {double size = 56}) {
 // 헬퍼 함수
 // ══════════════════════════════════════════════════
 
+final _allFilters = [...mainFilters, ...moreFilters];
+
 FilterDef? findCurrentFilter(String? filterCsv) {
   if (filterCsv == null) return null;
-  for (final f in [...mainFilters, ...moreFilters]) {
+  for (final f in _allFilters) {
     if (f.statuses.join(',') == filterCsv) return f;
     if (f.statuses.contains(filterCsv) && f.statuses.length > 1) return f;
   }
