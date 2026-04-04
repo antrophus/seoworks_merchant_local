@@ -101,7 +101,9 @@ class DashboardScreen extends ConsumerWidget {
             // ── 긴급 알림 ──
             _UrgentAlertBanner(onTap: () {
               ref.read(inventorySortAscProvider.notifier).state = true;
-              goToInventory('IN_INSPECTION');
+              ref.read(inventorySubIndexOverride.notifier).state = 1; // 검수중
+              ref.read(overdueHighlightMode.notifier).state = true;
+              goToInventory('OUTGOING,IN_INSPECTION');
             }),
             // ── KPI 카드 6개 (2x3 그리드) ──
             GridView.count(

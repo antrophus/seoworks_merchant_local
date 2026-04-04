@@ -14,6 +14,12 @@ final inventoryFilterProvider = StateProvider<String?>((ref) => null);
 final inventorySearchProvider = StateProvider<String>((ref) => '');
 final inventorySortAscProvider = StateProvider<bool>((ref) => false);
 
+/// 대시보드에서 서브탭 인덱스를 지정할 때 사용 (null = 미지정)
+final inventorySubIndexOverride = StateProvider<int?>((ref) => null);
+
+/// 검수 지연 하이라이트 모드 (대시보드 경고 배너 탭 시 활성)
+final overdueHighlightMode = StateProvider<bool>((ref) => false);
+
 /// 정렬 기준: 'created' | 'purchasePrice' | 'listedPrice' | 'sellPrice'
 final inventorySortByProvider = StateProvider<String>((ref) => 'created');
 

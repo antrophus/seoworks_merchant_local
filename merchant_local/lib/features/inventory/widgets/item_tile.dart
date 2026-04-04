@@ -45,9 +45,23 @@ class ItemTile extends ConsumerWidget {
     final statusClr = statusColor(item.currentStatus);
     final showDefect = _defectStatuses.contains(item.currentStatus);
 
+    final highlight = ref.watch(overdueHighlightMode);
+    int? overdueDays;
+    if (highlight && item.currentStatus == 'IN_INSPECTION') {
+      final updated = DateTime.tryParse(item.updatedAt ?? '');
+      if (updated != null) {
+        final days = DateTime.now().difference(updated).inDays;
+        if (days >= 12) overdueDays = days;
+      }
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      color: selected ? AppColors.primary.withAlpha(15) : null,
+      color: selected
+          ? AppColors.primary.withAlpha(15)
+          : overdueDays != null
+              ? AppColors.error.withAlpha(10)
+              : null,
       child: InkWell(
         onTap: () {
           if (isActive) {
@@ -197,6 +211,27 @@ class ItemTile extends ConsumerWidget {
                                 color: AppColors.error, fontSize: 11),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis),
+                      ),
+
+                    if (overdueDays != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withAlpha(20),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '검수 $overdueDays일 경과',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.error,
+                            ),
+                          ),
+                        ),
                       ),
 
                     if (item.isPersonal)

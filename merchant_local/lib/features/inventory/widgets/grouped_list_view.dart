@@ -325,6 +325,16 @@ class GroupCard extends ConsumerWidget {
   final ItemGroup group;
   const GroupCard({super.key, required this.group});
 
+  /// 그룹 내 12일 이상 경과된 IN_INSPECTION 아이템 수
+  int _overdueCount() {
+    final cutoff = DateTime.now().subtract(const Duration(days: 12));
+    return group.items.where((r) {
+      if (r.item.currentStatus != 'IN_INSPECTION') return false;
+      final updated = DateTime.tryParse(r.item.updatedAt ?? '');
+      return updated != null && updated.isBefore(cutoff);
+    }).length;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final groupIds = group.items.map((r) => r.item.id).toSet();
@@ -333,17 +343,60 @@ class GroupCard extends ConsumerWidget {
     final allSelected = isActive && groupIds.every(selectedIds.contains);
     final anySelected = isActive && groupIds.any(selectedIds.contains);
 
+    final highlight = ref.watch(overdueHighlightMode);
+    final overdueN = highlight ? _overdueCount() : 0;
+    final isOverdue = overdueN > 0;
+
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isOverdue
+            ? const BorderSide(color: AppColors.error, width: 1.5)
+            : BorderSide.none,
+      ),
+      color: isOverdue ? AppColors.error.withAlpha(8) : null,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: ExpansionTile(
-          initiallyExpanded: false,
+          initiallyExpanded: isOverdue,
           tilePadding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
           childrenPadding: EdgeInsets.zero,
-          title: group.isListed
-              ? _buildListedTitle()
-              : _buildDefaultTitle(context),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isOverdue)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withAlpha(20),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.warning_amber, size: 13, color: AppColors.error),
+                        const SizedBox(width: 4),
+                        Text(
+                          '검수 지연 $overdueN건',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              group.isListed
+                  ? _buildListedTitle()
+                  : _buildDefaultTitle(context),
+            ],
+          ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

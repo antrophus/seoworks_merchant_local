@@ -54,18 +54,26 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
   void _selectFilter(String? filterCsv) {
     ref.read(inventoryFilterProvider.notifier).state = filterCsv;
+    ref.read(overdueHighlightMode.notifier).state = false;
     _subIndex = null;
   }
 
   @override
   Widget build(BuildContext context) {
-    // 재고 탭 재진입 시 판매중(리스팅) 초기화
+    // 재고 탭 재진입 시 초기화 (대시보드 오버라이드 우선)
     ref.listen(homeTabProvider, (prev, next) {
       if (next == 1 && prev != 1) {
-        ref.read(inventoryFilterProvider.notifier).state = 'LISTED,POIZON_STORAGE';
-        ref.read(inventorySearchProvider.notifier).state = '';
-        _searchCtrl.clear();
-        setState(() => _subIndex = 0);
+        final subOverride = ref.read(inventorySubIndexOverride);
+        if (subOverride != null) {
+          // 대시보드에서 서브탭 지정 → 오버라이드 적용 후 소비
+          setState(() => _subIndex = subOverride);
+          ref.read(inventorySubIndexOverride.notifier).state = null;
+        } else {
+          ref.read(inventoryFilterProvider.notifier).state = 'LISTED,POIZON_STORAGE';
+          ref.read(inventorySearchProvider.notifier).state = '';
+          _searchCtrl.clear();
+          setState(() => _subIndex = 0);
+        }
       }
     });
 
