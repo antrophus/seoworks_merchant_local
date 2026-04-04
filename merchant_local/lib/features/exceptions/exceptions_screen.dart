@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/fullscreen_image_viewer.dart';
 import '../inventory/inventory_providers.dart' show fmt, productImage, statusLabels;
 
 // ══════════════════════════════════════════════════
@@ -440,18 +441,25 @@ class _InlineRejectionCard extends StatelessWidget {
                   scrollDirection: Axis.horizontal,
                   itemCount: photoUrls.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 6),
-                  itemBuilder: (_, i) => ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: Image.network(
-                      photoUrls[i],
-                      width: 64,
-                      height: 64,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                  itemBuilder: (_, i) => GestureDetector(
+                    onTap: () => FullscreenImageViewer.open(
+                      context,
+                      imageUrls: photoUrls,
+                      initialIndex: i,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.network(
+                        photoUrls[i],
                         width: 64,
                         height: 64,
-                        color: AppColors.surfaceVariant,
-                        child: const Icon(Icons.broken_image, size: 24),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 64,
+                          height: 64,
+                          color: AppColors.surfaceVariant,
+                          child: const Icon(Icons.broken_image, size: 24),
+                        ),
                       ),
                     ),
                   ),

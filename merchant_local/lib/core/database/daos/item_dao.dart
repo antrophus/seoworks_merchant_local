@@ -334,15 +334,18 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
       readsFrom: {items},
     ).getSingle();
 
-    // 거래처 반품
+    // 거래처 반품 (supplier_returns 레코드 존재 OR 상태 기반)
     final ret = await customSelect(
       '''
       SELECT COUNT(*) AS cnt,
              COALESCE(SUM(p.purchase_price), 0) AS amt
-      FROM supplier_returns sr
-      JOIN items i ON i.id = sr.item_id AND i.is_deleted = 0
-      LEFT JOIN purchases p ON p.item_id = i.id AND p.is_deleted = 0
-      WHERE sr.is_deleted = 0
+      FROM items i
+      JOIN purchases p ON p.item_id = i.id AND p.is_deleted = 0
+      WHERE i.is_deleted = 0
+        AND (
+          EXISTS (SELECT 1 FROM supplier_returns sr WHERE sr.item_id = i.id)
+          OR i.current_status IN ('RETURNING','SUPPLIER_RETURN','CANCEL_RETURNING')
+        )
       ''',
       readsFrom: {items},
     ).getSingle();
