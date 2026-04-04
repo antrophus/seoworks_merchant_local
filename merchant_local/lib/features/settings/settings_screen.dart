@@ -415,6 +415,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               label: const Text('중복 배송 이력 정리'),
             ),
           ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final engine = ref.read(syncEngineProvider);
+                final count = await engine.reconcileStatusFromLogs();
+                if (context.mounted) {
+                  ref.invalidate(itemsProvider);
+                  ref.invalidate(itemStatusCountsProvider);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(count > 0
+                            ? '상태 보정 $count건 완료'
+                            : '보정할 상태 불일치가 없습니다')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.build_outlined),
+              label: const Text('상태 보정 (status_logs 기준)'),
+            ),
+          ),
           const Divider(height: 48),
 
           // ── LLM API 키 (AI 이미지 인식) ──────────

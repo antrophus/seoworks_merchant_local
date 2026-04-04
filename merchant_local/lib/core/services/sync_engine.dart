@@ -152,34 +152,25 @@ class SyncEngine {
         }
       }
 
-      // 3. 테이블별 다운로드 / 업로드 대상 결정
-      final needDownload = <String>[];
-      final needUpload = <String>[];
+      // 3. 테이블별 동기화 대상 결정
+      //    HLC가 다르면 항상 다운로드→머지→업로드 (데이터 유실 방지)
+      final needSync = <String>[];
 
       for (final table in _syncOrder) {
         final local = localHlcs[table] ?? '';
         final remote = remoteManifest?.tableHlcs[table] ?? '';
 
         if (remoteManifest == null) {
-          if (local.isNotEmpty) needUpload.add(table);
-        } else {
-          final remoteNewer = remote.isNotEmpty && _hlcGreaterThan(remote, local);
-          final localNewer = local.isNotEmpty && _hlcGreaterThan(local, remote);
-
-          if (remoteNewer && localNewer) {
-            // 양쪽 모두 변경 → 다운로드 머지 후 업로드
-            needDownload.add(table);
-            needUpload.add(table);
-          } else if (remoteNewer) {
-            needDownload.add(table);
-          } else if (localNewer) {
-            needUpload.add(table);
-          }
+          // 최초 동기화 — 로컬 데이터가 있으면 업로드
+          if (local.isNotEmpty) needSync.add(table);
+        } else if (local != remote) {
+          // HLC가 다르면 무조건 양방향 동기화
+          needSync.add(table);
         }
       }
 
       // 변경할 테이블이 없으면 스킵
-      if (needDownload.isEmpty && needUpload.isEmpty) {
+      if (needSync.isEmpty) {
         debugPrint('[SyncEngine] 변경 없음 — 스킵');
         return SyncResult(
           status: SyncStatus.success,
@@ -188,8 +179,7 @@ class SyncEngine {
       }
 
       // 4. 다운로드 + CRDT 머지 먼저 (FK 순서대로)
-      for (final table in _syncOrder) {
-        if (!needDownload.contains(table)) continue;
+      for (final table in needSync) {
         final json = await driveService.downloadFile('data_$table.json');
         if (json == null) continue;
         final records =
@@ -197,9 +187,11 @@ class SyncEngine {
         await _mergeRecords(table, records);
       }
 
-      // 5. 업로드 (머지 완료 후, FK 순서대로)
-      for (final table in _syncOrder) {
-        if (!needUpload.contains(table)) continue;
+      // 5. status_logs 기반 상태 보정 (행 단위 LWW로 인한 상태 역행 복구)
+      await reconcileStatusFromLogs();
+
+      // 6. 머지+보정 완료 후 업로드 (FK 순서대로)
+      for (final table in needSync) {
         final records = await _getAllRecords(table);
         if (records.isEmpty) continue;
         await driveService.uploadFile(
@@ -226,12 +218,12 @@ class SyncEngine {
       );
 
       debugPrint(
-          '[SyncEngine] 완료 — 다운로드: ${needDownload.length}개, 업로드: ${needUpload.length}개');
+          '[SyncEngine] 완료 — 동기화: ${needSync.length}개 테이블');
 
       return SyncResult(
         status: SyncStatus.success,
-        tablesDownloaded: needDownload.length,
-        tablesUploaded: needUpload.length,
+        tablesDownloaded: needSync.length,
+        tablesUploaded: needSync.length,
         completedAt: DateTime.now(),
       );
     } catch (e, st) {
@@ -357,6 +349,48 @@ class SyncEngine {
       readsFrom: {},
     ).get();
     return rows.map((r) => r.data).toList();
+  }
+
+  // ── 상태 보정: status_logs 기반 ────────────────────────────────────────
+
+  /// status_logs에서 각 아이템의 최신 상태를 읽어 items.current_status를 보정.
+  /// 행 단위 LWW로 인해 상태가 역행한 경우를 복구한다.
+  Future<int> reconcileStatusFromLogs() async {
+    final rows = await db.customSelect(
+      '''
+      SELECT sl.item_id, sl.new_status
+      FROM status_logs sl
+      INNER JOIN (
+        SELECT item_id, MAX(changed_at) AS max_at
+        FROM status_logs
+        WHERE is_deleted = 0
+        GROUP BY item_id
+      ) latest ON sl.item_id = latest.item_id AND sl.changed_at = latest.max_at
+      INNER JOIN items i ON i.id = sl.item_id
+      WHERE i.current_status != sl.new_status
+        AND i.is_deleted = 0
+        AND sl.is_deleted = 0
+      ''',
+      readsFrom: {db.statusLogs, db.items},
+    ).get();
+
+    if (rows.isEmpty) return 0;
+
+    final hlcValue = clock.increment().toString();
+    final now = DateTime.now().toIso8601String();
+
+    for (final r in rows) {
+      final itemId = r.read<String>('item_id');
+      final correctStatus = r.read<String>('new_status');
+      await db.customStatement(
+        'UPDATE items SET current_status = ?, updated_at = ?, hlc = ? WHERE id = ?',
+        [correctStatus, now, hlcValue, itemId],
+      );
+      debugPrint('[SyncEngine] 상태 보정: $itemId → $correctStatus');
+    }
+
+    debugPrint('[SyncEngine] 상태 보정 완료 — ${rows.length}건');
+    return rows.length;
   }
 
   // ── GC: 소프트 삭제 레코드 정리 ──────────────────────────────────────────
