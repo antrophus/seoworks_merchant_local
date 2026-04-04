@@ -364,6 +364,7 @@ class _AssetOverviewSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final assetAsync = ref.watch(assetSummaryProvider);
+    final countsAsync = ref.watch(itemStatusCountsProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -371,6 +372,14 @@ class _AssetOverviewSection extends ConsumerWidget {
         Row(
           children: [
             Text('자산 개요', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(width: 4),
+            Text(
+              '(실재고 기준)',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppColors.textTertiary),
+            ),
             const Spacer(),
             TextButton(
               onPressed: () => context.push('/analytics'),
@@ -380,54 +389,12 @@ class _AssetOverviewSection extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         assetAsync.when(
-          data: (asset) {
-            final cost = asset['totalCost'] ?? 0;
-            final listed = asset['totalListed'] ?? 0;
-            final settlement = asset['totalSettlement'] ?? 0;
-            final profit = asset['totalProfit'] ?? 0;
-
-            return Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardTheme.color,
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-                border: Border.all(
-                  color:
-                      Theme.of(context).colorScheme.outline.withAlpha(50),
-                ),
-              ),
-              child: Column(
-                children: [
-                  _AssetRow(
-                      label: '총 구매원가',
-                      value: cost,
-                      icon: Icons.shopping_cart_outlined),
-                  const Divider(height: AppSpacing.lg),
-                  _AssetRow(
-                      label: '등록가 합계',
-                      value: listed,
-                      icon: Icons.sell_outlined),
-                  const Divider(height: AppSpacing.lg),
-                  _AssetRow(
-                      label: '정산금 합계',
-                      value: settlement,
-                      icon: Icons.account_balance_outlined),
-                  const Divider(height: AppSpacing.lg),
-                  _AssetRow(
-                    label: '예상 이익',
-                    value: profit,
-                    icon: Icons.trending_up,
-                    valueColor:
-                        profit >= 0 ? AppColors.success : AppColors.error,
-                  ),
-                ],
-              ),
-            );
-          },
-          loading: () => const SizedBox(
-            height: 120,
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          data: (asset) => countsAsync.when(
+            data: (counts) => _AssetCard(asset: asset, counts: counts),
+            loading: () => const _AssetLoading(),
+            error: (e, _) => Text('오류: $e'),
           ),
+          loading: () => const _AssetLoading(),
           error: (e, _) => Text('오류: $e'),
         ),
       ],
@@ -435,36 +402,302 @@ class _AssetOverviewSection extends ConsumerWidget {
   }
 }
 
-class _AssetRow extends StatelessWidget {
-  final String label;
-  final int value;
-  final IconData icon;
-  final Color? valueColor;
+class _AssetLoading extends StatelessWidget {
+  const _AssetLoading();
 
-  const _AssetRow({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.valueColor,
-  });
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 120,
+      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+    );
+  }
+}
+
+class _AssetCard extends StatelessWidget {
+  final Map<String, int> asset;
+  final Map<String, int> counts;
+
+  const _AssetCard({required this.asset, required this.counts});
+
+  @override
+  Widget build(BuildContext context) {
+    const stockKeys = [
+      'LISTED', 'POIZON_STORAGE', 'OUTGOING', 'IN_INSPECTION',
+      'OFFICE_STOCK', 'RETURNING', 'REPAIRING',
+    ];
+    final stockTotal =
+        stockKeys.fold<int>(0, (sum, k) => sum + (counts[k] ?? 0));
+
+    final netPurchaseCount =
+        (asset['purchaseCount'] ?? 0) - (asset['returnCount'] ?? 0);
+    final netPurchaseAmount =
+        (asset['purchaseAmount'] ?? 0) - (asset['returnAmount'] ?? 0);
+    final settleCount =
+        (asset['corpCount'] ?? 0) + (asset['personalCount'] ?? 0);
+    final settleAmount =
+        (asset['corpAmount'] ?? 0) + (asset['personalAmount'] ?? 0);
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardTheme.color,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withAlpha(50),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── 1. 재고 자산 ──
+          const _SectionTitle(icon: Icons.inventory_2_outlined, label: '재고 자산'),
+          const SizedBox(height: AppSpacing.xs),
+          _ValueRow(label: '구매원가', value: asset['stockCost'] ?? 0),
+          _ValueRow(label: '등록가 합계', value: asset['stockListed'] ?? 0),
+          _ValueRow(
+            label: '미실현 손익',
+            value: asset['unrealizedProfit'] ?? 0,
+            colorBySign: true,
+          ),
+
+          const Divider(height: AppSpacing.xl),
+
+          // ── 2. 재고 수량 ──
+          _SectionTitle(
+            icon: Icons.category_outlined,
+            label: '재고 수량',
+            trailing: '$stockTotal개',
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: 4,
+            children: [
+              _CountChip(label: '리스팅', count: counts['LISTED'] ?? 0),
+              _CountChip(
+                  label: '포이즌보관', count: counts['POIZON_STORAGE'] ?? 0),
+              _CountChip(label: '발송중', count: counts['OUTGOING'] ?? 0),
+              _CountChip(
+                  label: '검수중', count: counts['IN_INSPECTION'] ?? 0),
+              _CountChip(
+                  label: '미등록', count: counts['OFFICE_STOCK'] ?? 0),
+              _CountChip(label: '반송중', count: counts['RETURNING'] ?? 0),
+              _CountChip(label: '수선중', count: counts['REPAIRING'] ?? 0),
+            ],
+          ),
+
+          const Divider(height: AppSpacing.xl),
+
+          // ── 3. 구매 합산 ──
+          const _SectionTitle(icon: Icons.shopping_bag_outlined, label: '구매 합산'),
+          const SizedBox(height: AppSpacing.xs),
+          _SummaryRow(
+            label: '수량',
+            value: '${_wonFormat.format(netPurchaseCount)}개',
+            detail:
+                '총 ${asset['purchaseCount']} - 반품 ${asset['returnCount']}',
+          ),
+          _SummaryRow(
+            label: '금액',
+            value: '${_wonFormat.format(netPurchaseAmount)}원',
+          ),
+
+          const Divider(height: AppSpacing.xl),
+
+          // ── 4. 정산 합산 ──
+          const _SectionTitle(
+              icon: Icons.account_balance_outlined, label: '정산 합산'),
+          const SizedBox(height: AppSpacing.xs),
+          _SummaryRow(
+            label: '수량',
+            value: '${_wonFormat.format(settleCount)}개',
+            detail:
+                '법인 ${asset['corpCount']} + 개인 ${asset['personalCount']}',
+          ),
+          _SummaryRow(
+            label: '정산액',
+            value: '${_wonFormat.format(settleAmount)}원',
+          ),
+          _ValueRow(
+            label: '실현 손익',
+            value: asset['realizedProfit'] ?? 0,
+            colorBySign: true,
+          ),
+
+          const Divider(height: AppSpacing.xl),
+
+          // ── 5. 부가세 환급 ──
+          const _SectionTitle(
+              icon: Icons.receipt_long_outlined, label: '부가세 환급'),
+          const SizedBox(height: AppSpacing.xs),
+          _ValueRow(label: '환급 예상액', value: asset['vatRefund'] ?? 0),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String? trailing;
+
+  const _SectionTitle(
+      {required this.icon, required this.label, this.trailing});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: AppColors.textSecondary),
-        const SizedBox(width: AppSpacing.sm),
-        Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        const Spacer(),
+        Icon(icon, size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: AppSpacing.xs),
         Text(
-          '${_wonFormat.format(value)}원',
-          style: AppTheme.dataStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: valueColor ?? AppColors.textPrimary,
-          ),
+          label,
+          style: Theme.of(context)
+              .textTheme
+              .bodyMedium
+              ?.copyWith(fontWeight: FontWeight.w600),
         ),
+        if (trailing != null) ...[
+          const Spacer(),
+          Text(
+            trailing!,
+            style: AppTheme.dataStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+class _ValueRow extends StatelessWidget {
+  final String label;
+  final int value;
+  final bool colorBySign;
+
+  const _ValueRow({
+    required this.label,
+    required this.value,
+    this.colorBySign = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = colorBySign
+        ? (value >= 0 ? AppColors.success : AppColors.error)
+        : null;
+    final prefix = colorBySign && value > 0 ? '+' : '';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          const SizedBox(width: 24),
+          Text(
+            label,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: AppColors.textSecondary),
+          ),
+          const Spacer(),
+          Text(
+            '$prefix${_wonFormat.format(value)}원',
+            style: AppTheme.dataStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: color ?? AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final String? detail;
+
+  const _SummaryRow({required this.label, required this.value, this.detail});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          const SizedBox(width: 24),
+          SizedBox(
+            width: 40,
+            child: Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppColors.textSecondary),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            value,
+            style: AppTheme.dataStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (detail != null) ...[
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                '($detail)',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textTertiary,
+                      fontSize: 10,
+                    ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CountChip extends StatelessWidget {
+  final String label;
+  final int count;
+
+  const _CountChip({required this.label, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = count > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isActive ? AppColors.surfaceVariant : Colors.transparent,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(
+          color: Theme.of(context)
+              .colorScheme
+              .outline
+              .withAlpha(isActive ? 40 : 20),
+        ),
+      ),
+      child: Text(
+        '$label $count',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: isActive ? AppColors.textPrimary : AppColors.textTertiary,
+              fontSize: 11,
+            ),
+      ),
     );
   }
 }

@@ -299,32 +299,105 @@ class ItemDao extends DatabaseAccessor<AppDatabase> with _$ItemDaoMixin {
     return result.read<int>('cnt');
   }
 
-  /// 대시보드 — 자산 개요 (총 구매원가, 등록가 합계, 예상 이익)
+  /// 대시보드 — 자산 개요 (실재고 기준)
   Future<Map<String, int>> getAssetSummary() async {
-    final result = await customSelect(
+    // 1. 재고 자산 (현 보유 재고의 구매원가·등록가·미실현손익)
+    final stock = await customSelect(
       '''
       SELECT
-        COALESCE(SUM(p.purchase_price), 0) AS total_cost,
-        COALESCE(SUM(s.listed_price), 0) AS total_listed,
-        COALESCE(SUM(s.settlement_amount), 0) AS total_settlement,
-        COALESCE(SUM(
-          CASE WHEN s.settlement_amount IS NOT NULL
-               THEN s.settlement_amount - COALESCE(p.purchase_price, 0)
-               ELSE 0 END
-        ), 0) AS total_profit
+        COALESCE(SUM(p.purchase_price), 0) AS stock_cost,
+        COALESCE(SUM(CASE WHEN s.listed_price IS NOT NULL
+          THEN s.listed_price ELSE 0 END), 0) AS stock_listed,
+        COALESCE(SUM(CASE WHEN s.listed_price IS NOT NULL
+          THEN s.listed_price - COALESCE(p.purchase_price, 0)
+          ELSE 0 END), 0) AS unrealized_profit
       FROM items i
-      LEFT JOIN purchases p ON p.item_id = i.id
-      LEFT JOIN sales s ON s.item_id = i.id
-      WHERE i.current_status NOT IN ('ORDER_CANCELLED', 'DISPOSED')
+      LEFT JOIN purchases p ON p.item_id = i.id AND p.is_deleted = 0
+      LEFT JOIN sales s ON s.item_id = i.id AND s.is_deleted = 0
+      WHERE i.current_status IN
+        ('LISTED','POIZON_STORAGE','OUTGOING','IN_INSPECTION',
+         'OFFICE_STOCK','RETURNING','REPAIRING')
         AND i.is_deleted = 0
       ''',
       readsFrom: {items},
     ).getSingle();
+
+    // 2. 구매 합산 (전체 구매)
+    final purchase = await customSelect(
+      '''
+      SELECT COUNT(*) AS cnt,
+             COALESCE(SUM(p.purchase_price), 0) AS amt
+      FROM purchases p
+      JOIN items i ON i.id = p.item_id AND i.is_deleted = 0
+      WHERE p.is_deleted = 0
+      ''',
+      readsFrom: {items},
+    ).getSingle();
+
+    // 거래처 반품
+    final ret = await customSelect(
+      '''
+      SELECT COUNT(*) AS cnt,
+             COALESCE(SUM(p.purchase_price), 0) AS amt
+      FROM supplier_returns sr
+      JOIN items i ON i.id = sr.item_id AND i.is_deleted = 0
+      LEFT JOIN purchases p ON p.item_id = i.id AND p.is_deleted = 0
+      WHERE sr.is_deleted = 0
+      ''',
+      readsFrom: {items},
+    ).getSingle();
+
+    // 3. 정산 합산 (법인/개인 분리 + 실현 손익)
+    final settle = await customSelect(
+      '''
+      SELECT
+        COALESCE(SUM(CASE WHEN i.is_personal = 0 THEN 1 ELSE 0 END), 0)
+          AS corp_count,
+        COALESCE(SUM(CASE WHEN i.is_personal = 1 THEN 1 ELSE 0 END), 0)
+          AS personal_count,
+        COALESCE(SUM(CASE WHEN i.is_personal = 0
+          THEN s.settlement_amount ELSE 0 END), 0) AS corp_amount,
+        COALESCE(SUM(CASE WHEN i.is_personal = 1
+          THEN s.settlement_amount ELSE 0 END), 0) AS personal_amount,
+        COALESCE(SUM(
+          COALESCE(s.settlement_amount, 0) - COALESCE(p.purchase_price, 0)
+        ), 0) AS realized_profit
+      FROM items i
+      JOIN sales s ON s.item_id = i.id AND s.is_deleted = 0
+      LEFT JOIN purchases p ON p.item_id = i.id AND p.is_deleted = 0
+      WHERE i.current_status IN ('SETTLED', 'DEFECT_SETTLED')
+        AND i.is_deleted = 0
+      ''',
+      readsFrom: {items},
+    ).getSingle();
+
+    // 4. 부가세 환급 (정산 완료 제품의 VAT)
+    final vat = await customSelect(
+      '''
+      SELECT COALESCE(CAST(ROUND(SUM(p.vat_refundable), 0) AS INTEGER), 0)
+        AS vat_total
+      FROM items i
+      JOIN purchases p ON p.item_id = i.id AND p.is_deleted = 0
+      WHERE i.current_status IN ('SETTLED', 'DEFECT_SETTLED')
+        AND i.is_deleted = 0
+      ''',
+      readsFrom: {items},
+    ).getSingle();
+
     return {
-      'totalCost': result.read<int>('total_cost'),
-      'totalListed': result.read<int>('total_listed'),
-      'totalSettlement': result.read<int>('total_settlement'),
-      'totalProfit': result.read<int>('total_profit'),
+      'stockCost': stock.read<int>('stock_cost'),
+      'stockListed': stock.read<int>('stock_listed'),
+      'unrealizedProfit': stock.read<int>('unrealized_profit'),
+      'purchaseCount': purchase.read<int>('cnt'),
+      'purchaseAmount': purchase.read<int>('amt'),
+      'returnCount': ret.read<int>('cnt'),
+      'returnAmount': ret.read<int>('amt'),
+      'corpCount': settle.read<int>('corp_count'),
+      'personalCount': settle.read<int>('personal_count'),
+      'corpAmount': settle.read<int>('corp_amount'),
+      'personalAmount': settle.read<int>('personal_amount'),
+      'realizedProfit': settle.read<int>('realized_profit'),
+      'vatRefund': vat.read<int>('vat_total'),
     };
   }
 }
