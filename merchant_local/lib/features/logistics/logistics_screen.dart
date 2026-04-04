@@ -63,6 +63,28 @@ class _ShipmentGroup {
     if (sellTotal == 0) return 0;
     return (settlementTotal - purchaseTotal) / sellTotal * 100;
   }
+
+  // 반송 제외 계산
+  List<_ShipmentItem> get _normalItems =>
+      items.where((i) => !i.hasReturn).toList();
+
+  int get returnCount => items.length - _normalItems.length;
+
+  int get netItemCount => _normalItems.length;
+
+  int get netSellTotal =>
+      _normalItems.fold(0, (s, i) => s + (i.sellPrice ?? 0));
+
+  int get netSettlementTotal =>
+      _normalItems.fold(0, (s, i) => s + (i.settlementAmount ?? 0));
+
+  int get netPurchaseTotal =>
+      _normalItems.fold(0, (s, i) => s + (i.purchasePrice ?? 0));
+
+  double get netProfitRate {
+    if (netSellTotal == 0) return 0;
+    return (netSettlementTotal - netPurchaseTotal) / netSellTotal * 100;
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -346,9 +368,13 @@ class _ShipmentGroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final profit = group.settlementTotal - group.purchaseTotal;
-    final profitColor = profit >= 0 ? AppColors.success : AppColors.error;
-    final hasAnyReturn = group.items.any((i) => i.hasReturn);
+    final hasAnyReturn = group.returnCount > 0;
+    // 반송 있으면 순수치 사용
+    final displayCount = hasAnyReturn ? group.netItemCount : group.items.length;
+    final displaySell = hasAnyReturn ? group.netSellTotal : group.sellTotal;
+    final displaySettlement = hasAnyReturn ? group.netSettlementTotal : group.settlementTotal;
+    final displayRate = hasAnyReturn ? group.netProfitRate : group.profitRate;
+    final profitColor = displayRate >= 0 ? AppColors.success : AppColors.error;
 
     return Card(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -396,7 +422,7 @@ class _ShipmentGroupCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '${group.items.length}개  |  ${_wonFormat.format(group.sellTotal)}원',
+                    '$displayCount개  |  ${_wonFormat.format(displaySell)}원',
                     style: AppTheme.dataStyle(
                         fontSize: 11, fontWeight: FontWeight.w500),
                   ),
@@ -404,7 +430,7 @@ class _ShipmentGroupCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '정산 ${_wonFormat.format(group.settlementTotal)}원',
+                        '정산 ${_wonFormat.format(displaySettlement)}원',
                         style: AppTheme.dataStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -412,7 +438,7 @@ class _ShipmentGroupCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '${group.profitRate >= 0 ? '+' : ''}${group.profitRate.toStringAsFixed(1)}%',
+                        '${displayRate >= 0 ? '+' : ''}${displayRate.toStringAsFixed(1)}%',
                         style: AppTheme.dataStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -420,6 +446,18 @@ class _ShipmentGroupCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                  // 반송 차감 표시
+                  if (hasAnyReturn)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        '반송 ${group.returnCount}개 -${_wonFormat.format(group.sellTotal - group.netSellTotal)}원 제외',
+                        style: AppTheme.dataStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.warning),
+                      ),
+                    ),
                 ],
               ),
             ],
