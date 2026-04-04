@@ -9,7 +9,7 @@ class SyncScheduler with WidgetsBindingObserver {
 
   bool _disposed = false;
 
-  SyncScheduler(this._engine, {this.interval = const Duration(minutes: 15)});
+  SyncScheduler(this._engine, {this.interval = const Duration(hours: 1)});
 
   void start() {
     WidgetsBinding.instance.addObserver(this);

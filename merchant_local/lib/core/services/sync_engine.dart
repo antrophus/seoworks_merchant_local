@@ -132,7 +132,10 @@ class SyncEngine {
       // 0. 기존 데이터 HLC 백필 (hlc = '' 레코드)
       await _backfillMissingHlcs();
 
-      // 1. 리모트 manifest 다운로드
+      // 1. 로컬 max HLC 수집
+      final localHlcs = await _getLocalMaxHlcs();
+
+      // 2. 리모트 manifest 다운로드 (항상)
       SyncManifest? remoteManifest;
       final manifestJson = await driveService.downloadFile(_manifestFile);
       if (manifestJson != null) {
@@ -149,9 +152,6 @@ class SyncEngine {
         }
       }
 
-      // 2. 로컬 max HLC 수집
-      final localHlcs = await _getLocalMaxHlcs();
-
       // 3. 테이블별 다운로드 / 업로드 대상 결정
       final needDownload = <String>[];
       final needUpload = <String>[];
@@ -161,19 +161,33 @@ class SyncEngine {
         final remote = remoteManifest?.tableHlcs[table] ?? '';
 
         if (remoteManifest == null) {
-          // 최초 sync → 로컬 데이터 전체 업로드
           if (local.isNotEmpty) needUpload.add(table);
         } else {
-          if (remote.isNotEmpty && _hlcGreaterThan(remote, local)) {
+          final remoteNewer = remote.isNotEmpty && _hlcGreaterThan(remote, local);
+          final localNewer = local.isNotEmpty && _hlcGreaterThan(local, remote);
+
+          if (remoteNewer && localNewer) {
+            // 양쪽 모두 변경 → 다운로드 머지 후 업로드
             needDownload.add(table);
-          }
-          if (local.isNotEmpty && _hlcGreaterThan(local, remote)) {
+            needUpload.add(table);
+          } else if (remoteNewer) {
+            needDownload.add(table);
+          } else if (localNewer) {
             needUpload.add(table);
           }
         }
       }
 
-      // 4. 다운로드 + CRDT 머지 (FK 순서대로)
+      // 변경할 테이블이 없으면 스킵
+      if (needDownload.isEmpty && needUpload.isEmpty) {
+        debugPrint('[SyncEngine] 변경 없음 — 스킵');
+        return SyncResult(
+          status: SyncStatus.success,
+          completedAt: DateTime.now(),
+        );
+      }
+
+      // 4. 다운로드 + CRDT 머지 먼저 (FK 순서대로)
       for (final table in _syncOrder) {
         if (!needDownload.contains(table)) continue;
         final json = await driveService.downloadFile('data_$table.json');
@@ -183,7 +197,7 @@ class SyncEngine {
         await _mergeRecords(table, records);
       }
 
-      // 5. 업로드 (FK 순서대로)
+      // 5. 업로드 (머지 완료 후, FK 순서대로)
       for (final table in _syncOrder) {
         if (!needUpload.contains(table)) continue;
         final records = await _getAllRecords(table);
@@ -192,7 +206,7 @@ class SyncEngine {
             'data_$table.json', jsonEncode(records));
       }
 
-      // 6. Manifest 갱신 + 업로드
+      // 7. Manifest 갱신 + 업로드
       final updatedHlcs = await _getLocalMaxHlcs();
       final newManifest = SyncManifest(
         schemaVersion: _schemaVersion,
@@ -203,7 +217,7 @@ class SyncEngine {
       await driveService.uploadFile(
           _manifestFile, jsonEncode(newManifest.toJson()));
 
-      // 7. SyncMeta에 마지막 동기화 시각 저장
+      // 8. SyncMeta에 마지막 동기화 시각 저장
       await db.customStatement(
         "INSERT OR REPLACE INTO sync_meta (key, value, updated_at) "
         "VALUES ('last_sync_at', '${DateTime.now().toIso8601String()}', "
