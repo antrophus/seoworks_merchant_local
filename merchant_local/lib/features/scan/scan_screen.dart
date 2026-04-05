@@ -1150,15 +1150,13 @@ class _ImageRecognitionTabState extends ConsumerState<_ImageRecognitionTab> {
     });
   }
 
-  void _goToRegister() {
-    if (_result == null) return;
-    // 쿼리 파라미터로 인식 결과 전달
+  void _goToRegister(ProductRecognitionResult edited) {
     final params = <String, String>{};
-    if (_result!.brand != null) params['brand'] = _result!.brand!;
-    if (_result!.modelCode != null) params['modelCode'] = _result!.modelCode!;
-    if (_result!.modelName != null) params['modelName'] = _result!.modelName!;
-    if (_result!.sizeKr != null) params['sizeKr'] = _result!.sizeKr!;
-    if (_result!.category != null) params['category'] = _result!.category!;
+    if (edited.brand != null && edited.brand!.isNotEmpty) params['brand'] = edited.brand!;
+    if (edited.modelCode != null && edited.modelCode!.isNotEmpty) params['modelCode'] = edited.modelCode!;
+    if (edited.modelName != null && edited.modelName!.isNotEmpty) params['modelName'] = edited.modelName!;
+    if (edited.sizeKr != null && edited.sizeKr!.isNotEmpty) params['sizeKr'] = edited.sizeKr!;
+    if (edited.category != null && edited.category!.isNotEmpty) params['category'] = edited.category!;
 
     final query = params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
     context.push('/register${query.isNotEmpty ? "?$query" : ""}');
@@ -1263,7 +1261,7 @@ class _ImageRecognitionTabState extends ConsumerState<_ImageRecognitionTab> {
           const SizedBox(height: 16),
           _RecognitionResultCard(
             result: _result!,
-            onRegister: _goToRegister,
+            onRegister: (edited) => _goToRegister(edited),
           ),
         ],
       ],
@@ -1275,9 +1273,9 @@ class _ImageRecognitionTabState extends ConsumerState<_ImageRecognitionTab> {
 // 인식 결과 카드
 // ══════════════════════════════════════════════════
 
-class _RecognitionResultCard extends StatelessWidget {
+class _RecognitionResultCard extends StatefulWidget {
   final ProductRecognitionResult result;
-  final VoidCallback onRegister;
+  final ValueChanged<ProductRecognitionResult> onRegister;
 
   const _RecognitionResultCard({
     required this.result,
@@ -1285,7 +1283,58 @@ class _RecognitionResultCard extends StatelessWidget {
   });
 
   @override
+  State<_RecognitionResultCard> createState() => _RecognitionResultCardState();
+}
+
+class _RecognitionResultCardState extends State<_RecognitionResultCard> {
+  late final TextEditingController _brandCtrl;
+  late final TextEditingController _modelCodeCtrl;
+  late final TextEditingController _modelNameCtrl;
+  late final TextEditingController _sizeCtrl;
+  late final TextEditingController _barcodeCtrl;
+  late final TextEditingController _categoryCtrl;
+  late final TextEditingController _genderCtrl;
+  bool _editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _brandCtrl = TextEditingController(text: widget.result.brand ?? '');
+    _modelCodeCtrl = TextEditingController(text: widget.result.modelCode ?? '');
+    _modelNameCtrl = TextEditingController(text: widget.result.modelName ?? '');
+    _sizeCtrl = TextEditingController(text: widget.result.sizeKr ?? '');
+    _barcodeCtrl = TextEditingController(text: widget.result.barcode ?? '');
+    _categoryCtrl = TextEditingController(text: widget.result.category ?? '');
+    _genderCtrl = TextEditingController(text: widget.result.gender ?? '');
+  }
+
+  @override
+  void dispose() {
+    _brandCtrl.dispose();
+    _modelCodeCtrl.dispose();
+    _modelNameCtrl.dispose();
+    _sizeCtrl.dispose();
+    _barcodeCtrl.dispose();
+    _categoryCtrl.dispose();
+    _genderCtrl.dispose();
+    super.dispose();
+  }
+
+  ProductRecognitionResult _buildEdited() => ProductRecognitionResult(
+        brand: _brandCtrl.text.trim().isEmpty ? null : _brandCtrl.text.trim(),
+        modelCode: _modelCodeCtrl.text.trim().isEmpty ? null : _modelCodeCtrl.text.trim(),
+        modelName: _modelNameCtrl.text.trim().isEmpty ? null : _modelNameCtrl.text.trim(),
+        sizeKr: _sizeCtrl.text.trim().isEmpty ? null : _sizeCtrl.text.trim(),
+        barcode: _barcodeCtrl.text.trim().isEmpty ? null : _barcodeCtrl.text.trim(),
+        category: _categoryCtrl.text.trim().isEmpty ? null : _categoryCtrl.text.trim(),
+        gender: _genderCtrl.text.trim().isEmpty ? null : _genderCtrl.text.trim(),
+        providerUsed: widget.result.providerUsed,
+        rawResponse: widget.result.rawResponse,
+      );
+
+  @override
   Widget build(BuildContext context) {
+    final r = widget.result;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1307,32 +1356,56 @@ class _RecognitionResultCard extends StatelessWidget {
                     color: Colors.purple.shade50,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(result.providerUsed,
+                  child: Text(r.providerUsed,
                       style: TextStyle(
                           fontSize: 10, color: Colors.purple.shade700)),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            if (result.brand != null) _row('브랜드', result.brand!),
-            if (result.modelCode != null) _row('모델코드', result.modelCode!),
-            if (result.modelName != null) _row('모델명', result.modelName!),
-            if (result.sizeKr != null) _row('사이즈', result.sizeKr!),
-            if (result.barcode != null) _row('바코드', result.barcode!),
-            if (result.category != null) _row('카테고리', result.category!),
-            if (result.gender != null) _row('성별', result.gender!),
-            if (!result.hasUsefulData)
-              const Text('인식 결과가 없습니다.',
-                  style: TextStyle(color: Colors.grey)),
+            if (_editing) ...[
+              _editRow('브랜드', _brandCtrl),
+              _editRow('모델코드', _modelCodeCtrl),
+              _editRow('모델명', _modelNameCtrl),
+              _editRow('사이즈', _sizeCtrl),
+              _editRow('바코드', _barcodeCtrl),
+              _editRow('카테고리', _categoryCtrl),
+              _editRow('성별', _genderCtrl),
+            ] else ...[
+              if (r.brand != null) _row('브랜드', r.brand!),
+              if (r.modelCode != null) _row('모델코드', r.modelCode!),
+              if (r.modelName != null) _row('모델명', r.modelName!),
+              if (r.sizeKr != null) _row('사이즈', r.sizeKr!),
+              if (r.barcode != null) _row('바코드', r.barcode!),
+              if (r.category != null) _row('카테고리', r.category!),
+              if (r.gender != null) _row('성별', r.gender!),
+              if (!r.hasUsefulData)
+                const Text('인식 결과가 없습니다.',
+                    style: TextStyle(color: Colors.grey)),
+            ],
             const SizedBox(height: 12),
-            if (result.hasUsefulData)
-              FilledButton.icon(
-                onPressed: onRegister,
-                icon: const Icon(Icons.add_box),
-                label: const Text('이 정보로 입고 등록'),
-                style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44)),
+            if (r.hasUsefulData || _editing) ...[
+              Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: () => setState(() => _editing = !_editing),
+                    icon: Icon(_editing ? Icons.check : Icons.edit, size: 16),
+                    label: Text(_editing ? '완료' : '수정',
+                        style: const TextStyle(fontSize: 13)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => widget.onRegister(_buildEdited()),
+                      icon: const Icon(Icons.add_box),
+                      label: const Text('이 정보로 입고 등록'),
+                      style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(44)),
+                    ),
+                  ),
+                ],
               ),
+            ],
           ],
         ),
       ),
@@ -1352,6 +1425,34 @@ class _RecognitionResultCard extends StatelessWidget {
             child: Text(value,
                 style:
                     const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _editRow(String label, TextEditingController ctrl) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+              width: 70,
+              child: Text(label,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey))),
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
           ),
         ],
       ),

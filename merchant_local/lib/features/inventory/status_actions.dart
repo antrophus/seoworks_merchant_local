@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
@@ -598,6 +600,17 @@ class _InspectionSheetState extends State<_InspectionSheet> {
     super.dispose();
   }
 
+  /// 임시 파일을 앱 영구 저장소에 복사하고 영구 경로를 반환
+  Future<String> _saveToLocalStorage(String tempPath) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final photoDir = Directory(p.join(appDir.path, 'inspection_photos'));
+    if (!photoDir.existsSync()) photoDir.createSync(recursive: true);
+    final ext = p.extension(tempPath).isNotEmpty ? p.extension(tempPath) : '.jpg';
+    final destPath = p.join(photoDir.path, '${_uuid.v4()}$ext');
+    await File(tempPath).copy(destPath);
+    return destPath;
+  }
+
   Future<void> _pickPhoto() async {
     final file = await _picker.pickImage(
       source: ImageSource.camera,
@@ -605,7 +618,8 @@ class _InspectionSheetState extends State<_InspectionSheet> {
       imageQuality: 85,
     );
     if (file != null) {
-      setState(() => _photoUrls.add(file.path));
+      final saved = await _saveToLocalStorage(file.path);
+      setState(() => _photoUrls.add(saved));
     }
   }
 
@@ -616,7 +630,8 @@ class _InspectionSheetState extends State<_InspectionSheet> {
       imageQuality: 85,
     );
     if (file != null) {
-      setState(() => _photoUrls.add(file.path));
+      final saved = await _saveToLocalStorage(file.path);
+      setState(() => _photoUrls.add(saved));
     }
   }
 

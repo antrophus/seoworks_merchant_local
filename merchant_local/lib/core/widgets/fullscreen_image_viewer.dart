@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -68,32 +69,46 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
             controller: _controller,
             itemCount: total,
             onPageChanged: (i) => setState(() => _current = i),
-            itemBuilder: (_, i) => GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Center(
-                child: InteractiveViewer(
-                  minScale: 1.0,
-                  maxScale: 4.0,
-                  child: Image.network(
-                    widget.imageUrls[i],
-                    fit: BoxFit.contain,
-                    loadingBuilder: (_, child, progress) {
-                      if (progress == null) return child;
-                      return const Center(
-                        child: CircularProgressIndicator(
-                          color: Colors.white54,
-                        ),
-                      );
-                    },
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.broken_image,
-                      size: 64,
-                      color: Colors.white38,
-                    ),
+            itemBuilder: (_, i) {
+              final url = widget.imageUrls[i];
+              final isLocal = !url.startsWith('http');
+              return GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Center(
+                  child: InteractiveViewer(
+                    minScale: 1.0,
+                    maxScale: 4.0,
+                    child: isLocal
+                        ? Image.file(
+                            File(url),
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.broken_image,
+                              size: 64,
+                              color: Colors.white38,
+                            ),
+                          )
+                        : Image.network(
+                            url,
+                            fit: BoxFit.contain,
+                            loadingBuilder: (_, child, progress) {
+                              if (progress == null) return child;
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white54,
+                                ),
+                              );
+                            },
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.broken_image,
+                              size: 64,
+                              color: Colors.white38,
+                            ),
+                          ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
 
           // 닫기 버튼

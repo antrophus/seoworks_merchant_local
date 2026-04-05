@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -386,28 +387,45 @@ class DefectChip extends StatelessWidget {
                     scrollDirection: Axis.horizontal,
                     itemCount: photoUrls.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 4),
-                    itemBuilder: (_, i) => GestureDetector(
-                      onTap: () => FullscreenImageViewer.open(
-                        context,
-                        imageUrls: photoUrls,
-                        initialIndex: i,
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
-                          photoUrls[i],
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 48,
-                            height: 48,
-                            color: AppColors.surfaceVariant,
-                            child: const Icon(Icons.broken_image, size: 20),
-                          ),
+                    itemBuilder: (_, i) {
+                      final url = photoUrls[i];
+                      final isLocal = !url.startsWith('http');
+                      return GestureDetector(
+                        onTap: () => FullscreenImageViewer.open(
+                          context,
+                          imageUrls: photoUrls,
+                          initialIndex: i,
                         ),
-                      ),
-                    ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: isLocal
+                              ? Image.file(
+                                  File(url),
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: AppColors.surfaceVariant,
+                                    child: const Icon(Icons.broken_image, size: 20),
+                                  ),
+                                )
+                              : Image.network(
+                                  url,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: AppColors.surfaceVariant,
+                                    child: const Icon(Icons.broken_image, size: 20),
+                                  ),
+                                ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),

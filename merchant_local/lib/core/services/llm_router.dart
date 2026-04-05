@@ -40,7 +40,7 @@ const _providers = <LlmProvider, _ProviderConfig>{
   LlmProvider.grok: _ProviderConfig(
     name: 'Grok',
     baseUrl: 'https://api.x.ai/v1/chat/completions',
-    model: 'grok-3-mini',
+    model: 'grok-4-1-fast-non-reasoning',
     storageKey: _keyGrokApiKey,
   ),
   LlmProvider.deepseek: _ProviderConfig(
@@ -224,6 +224,7 @@ class LlmRouter {
                 'type': 'image_url',
                 'image_url': {
                   'url': 'data:image/jpeg;base64,$base64Image',
+                  'detail': 'high',
                 },
               },
               {'type': 'text', 'text': _prompt},

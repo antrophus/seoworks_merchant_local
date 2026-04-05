@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -441,28 +442,45 @@ class _InlineRejectionCard extends StatelessWidget {
                   scrollDirection: Axis.horizontal,
                   itemCount: photoUrls.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 6),
-                  itemBuilder: (_, i) => GestureDetector(
-                    onTap: () => FullscreenImageViewer.open(
-                      context,
-                      imageUrls: photoUrls,
-                      initialIndex: i,
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Image.network(
-                        photoUrls[i],
-                        width: 64,
-                        height: 64,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 64,
-                          height: 64,
-                          color: AppColors.surfaceVariant,
-                          child: const Icon(Icons.broken_image, size: 24),
-                        ),
+                  itemBuilder: (_, i) {
+                    final url = photoUrls[i];
+                    final isLocal = !url.startsWith('http');
+                    return GestureDetector(
+                      onTap: () => FullscreenImageViewer.open(
+                        context,
+                        imageUrls: photoUrls,
+                        initialIndex: i,
                       ),
-                    ),
-                  ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: isLocal
+                            ? Image.file(
+                                File(url),
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  width: 64,
+                                  height: 64,
+                                  color: AppColors.surfaceVariant,
+                                  child: const Icon(Icons.broken_image, size: 24),
+                                ),
+                              )
+                            : Image.network(
+                                url,
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  width: 64,
+                                  height: 64,
+                                  color: AppColors.surfaceVariant,
+                                  child: const Icon(Icons.broken_image, size: 24),
+                                ),
+                              ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
