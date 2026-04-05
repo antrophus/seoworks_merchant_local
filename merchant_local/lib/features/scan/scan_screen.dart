@@ -1157,6 +1157,7 @@ class _ImageRecognitionTabState extends ConsumerState<_ImageRecognitionTab> {
     if (edited.modelName != null && edited.modelName!.isNotEmpty) params['modelName'] = edited.modelName!;
     if (edited.sizeKr != null && edited.sizeKr!.isNotEmpty) params['sizeKr'] = edited.sizeKr!;
     if (edited.category != null && edited.category!.isNotEmpty) params['category'] = edited.category!;
+    if (edited.barcode != null && edited.barcode!.isNotEmpty) params['barcode'] = edited.barcode!;
 
     final query = params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
     context.push('/register${query.isNotEmpty ? "?$query" : ""}');

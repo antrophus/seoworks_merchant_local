@@ -89,6 +89,7 @@ final _router = GoRouter(
         prefillModelName: state.uri.queryParameters['modelName'],
         prefillSizeKr: state.uri.queryParameters['sizeKr'],
         prefillCategory: state.uri.queryParameters['category'],
+        prefillBarcode: state.uri.queryParameters['barcode'],
       ),
     ),
   ],

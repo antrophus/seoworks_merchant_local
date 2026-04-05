@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/database/app_database.dart';
 import '../../core/providers.dart';
+import 'widgets/barcode_widgets.dart';
 import 'widgets/size_picker_sheet.dart';
 
 const _uuid = Uuid();
@@ -30,14 +31,17 @@ final _recentBrandIdsProvider = StateProvider<List<String>>((ref) => []);
 class _SizeEntry {
   final sizeKrController = TextEditingController();
   final sizeEuController = TextEditingController();
+  final barcodeController = TextEditingController();
   int qty = 1;
 
   String get sizeKr => sizeKrController.text.trim();
   String get sizeEu => sizeEuController.text.trim();
+  String get barcode => barcodeController.text.trim();
 
   void dispose() {
     sizeKrController.dispose();
     sizeEuController.dispose();
+    barcodeController.dispose();
   }
 }
 
@@ -47,6 +51,7 @@ class ItemRegisterScreen extends ConsumerStatefulWidget {
   final String? prefillModelName;
   final String? prefillSizeKr;
   final String? prefillCategory;
+  final String? prefillBarcode;
 
   const ItemRegisterScreen({
     super.key,
@@ -55,6 +60,7 @@ class ItemRegisterScreen extends ConsumerStatefulWidget {
     this.prefillModelName,
     this.prefillSizeKr,
     this.prefillCategory,
+    this.prefillBarcode,
   });
 
   bool get hasPrefill =>
@@ -62,7 +68,8 @@ class ItemRegisterScreen extends ConsumerStatefulWidget {
       prefillModelCode != null ||
       prefillModelName != null ||
       prefillSizeKr != null ||
-      prefillCategory != null;
+      prefillCategory != null ||
+      prefillBarcode != null;
 
   @override
   ConsumerState<ItemRegisterScreen> createState() => _ItemRegisterScreenState();
@@ -182,6 +189,9 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
           _sizeEntries.first.sizeKrController.text = widget.prefillSizeKr!;
           _autoFillEuSize(_sizeEntries.first);
         }
+        if (widget.prefillBarcode != null) {
+          _sizeEntries.first.barcodeController.text = widget.prefillBarcode!;
+        }
         return;
       }
     }
@@ -217,6 +227,11 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     if (widget.prefillSizeKr != null) {
       _sizeEntries.first.sizeKrController.text = widget.prefillSizeKr!;
       _autoFillEuSize(_sizeEntries.first);
+    }
+
+    // AI 추출 바코드 자동완성
+    if (widget.prefillBarcode != null) {
+      _sizeEntries.first.barcodeController.text = widget.prefillBarcode!;
     }
   }
 
@@ -325,6 +340,17 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
       _sizeEntries[index].dispose();
       _sizeEntries.removeAt(index);
     });
+  }
+
+  Future<void> _scanBarcodeForEntry(_SizeEntry entry) async {
+    final code = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const BarcodeScanSheet(),
+    );
+    if (code != null && code.isNotEmpty && mounted) {
+      setState(() => entry.barcodeController.text = code);
+    }
   }
 
   Future<void> _openSizePicker(_SizeEntry entry) async {
@@ -562,8 +588,15 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
       // → Drift stream이 커밋 후 1회만 emit
       // → loadBatchData 실행 시 모든 purchase가 이미 DB에 존재 (매입일 미상 버그 방지)
       final db = ref.read(databaseProvider);
+      // 사이즈별 바코드: 같은 사이즈 qty>1이면 첫 아이템에만 적용
+      final usedBarcodes = <String>{};
       await db.transaction(() async {
         for (final row in rowData) {
+          final bc = row.entry.barcode;
+          final barcodeValue =
+              (bc.isNotEmpty && !usedBarcodes.contains(bc)) ? bc : null;
+          if (barcodeValue != null) usedBarcodes.add(barcodeValue);
+
           await ref.read(itemDaoProvider).insertItem(ItemsCompanion(
                 id: Value(row.itemId),
                 productId: Value(productId),
@@ -571,6 +604,7 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
                 sizeKr: Value(row.entry.sizeKr),
                 sizeEu: Value(
                     row.entry.sizeEu.isNotEmpty ? row.entry.sizeEu : null),
+                barcode: Value(barcodeValue),
                 isPersonal: Value(_isPersonal),
                 currentStatus: Value(_entryType),
                 note: Value(_noteController.text.isNotEmpty
@@ -1074,103 +1108,135 @@ class _ItemRegisterScreenState extends ConsumerState<ItemRegisterScreen> {
     return List.generate(_sizeEntries.length, (i) {
       final entry = _sizeEntries[i];
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
           children: [
-            // 번호
-            SizedBox(
-              width: 20,
-              child: Text('${i + 1}',
-                  style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center),
-            ),
-            const SizedBox(width: 4),
-
-            // 사이즈 KR + 피커 버튼
-            Expanded(
-              flex: 3,
-              child: TextFormField(
-                controller: entry.sizeKrController,
-                decoration: InputDecoration(
-                  labelText: 'KR',
-                  border: const OutlineInputBorder(),
-                  hintText: '270',
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  errorStyle: const TextStyle(fontSize: 10),
-                  suffixIcon: _sizeCharts.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.list_alt, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints:
-                              const BoxConstraints(minWidth: 32, minHeight: 32),
-                          tooltip: '사이즈 선택',
-                          onPressed: () => _openSizePicker(entry),
-                        )
-                      : null,
-                ),
-                onChanged: (_) => _autoFillEuSize(entry),
-                validator: (v) => (v == null || v.trim().isEmpty) ? '필수' : null,
-              ),
-            ),
-            const SizedBox(width: 8),
-
-            // 사이즈 EU (선택)
-            Expanded(
-              flex: 2,
-              child: TextFormField(
-                controller: entry.sizeEuController,
-                decoration: const InputDecoration(
-                  labelText: 'EU',
-                  border: OutlineInputBorder(),
-                  hintText: '42.5',
-                  isDense: true,
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-
-            // 수량 스테퍼: - [qty] +
+            // ── 사이즈 행 ──
             Row(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                _StepperButton(
-                  icon: Icons.remove,
-                  onTap:
-                      entry.qty > 1 ? () => setState(() => entry.qty--) : null,
+                // 번호
+                SizedBox(
+                  width: 20,
+                  child: Text('${i + 1}',
+                      style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center),
                 ),
-                Container(
+                const SizedBox(width: 4),
+
+                // 사이즈 KR + 피커 버튼
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: entry.sizeKrController,
+                    decoration: InputDecoration(
+                      labelText: 'KR',
+                      border: const OutlineInputBorder(),
+                      hintText: '270',
+                      isDense: true,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      errorStyle: const TextStyle(fontSize: 10),
+                      suffixIcon: _sizeCharts.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.list_alt, size: 18),
+                              padding: EdgeInsets.zero,
+                              constraints:
+                                  const BoxConstraints(minWidth: 32, minHeight: 32),
+                              tooltip: '사이즈 선택',
+                              onPressed: () => _openSizePicker(entry),
+                            )
+                          : null,
+                    ),
+                    onChanged: (_) => _autoFillEuSize(entry),
+                    validator: (v) => (v == null || v.trim().isEmpty) ? '필수' : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // 사이즈 EU (선택)
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: entry.sizeEuController,
+                    decoration: const InputDecoration(
+                      labelText: 'EU',
+                      border: OutlineInputBorder(),
+                      hintText: '42.5',
+                      isDense: true,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // 수량 스테퍼: - [qty] +
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _StepperButton(
+                      icon: Icons.remove,
+                      onTap:
+                          entry.qty > 1 ? () => setState(() => entry.qty--) : null,
+                    ),
+                    Container(
+                      width: 32,
+                      alignment: Alignment.center,
+                      child: Text('${entry.qty}',
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600)),
+                    ),
+                    _StepperButton(
+                      icon: Icons.add,
+                      onTap: () => setState(() => entry.qty++),
+                    ),
+                  ],
+                ),
+
+                // 삭제 버튼
+                SizedBox(
                   width: 32,
-                  alignment: Alignment.center,
-                  child: Text('${entry.qty}',
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600)),
-                ),
-                _StepperButton(
-                  icon: Icons.add,
-                  onTap: () => setState(() => entry.qty++),
+                  child: _sizeEntries.length > 1
+                      ? IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, size: 20),
+                          color: Colors.red,
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _removeSizeEntry(i),
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ],
             ),
-
-            // 삭제 버튼
-            SizedBox(
-              width: 32,
-              child: _sizeEntries.length > 1
-                  ? IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, size: 20),
-                      color: Colors.red,
-                      padding: EdgeInsets.zero,
-                      onPressed: () => _removeSizeEntry(i),
-                    )
-                  : const SizedBox.shrink(),
+            // ── 바코드 행 ──
+            Padding(
+              padding: const EdgeInsets.only(left: 24, top: 4),
+              child: TextFormField(
+                controller: entry.barcodeController,
+                decoration: InputDecoration(
+                  labelText: '바코드',
+                  hintText: '바코드 번호',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  prefixIcon: const Icon(Icons.qr_code, size: 18),
+                  prefixIconConstraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 32),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.camera_alt_outlined, size: 20),
+                    tooltip: '바코드 스캔',
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 32),
+                    onPressed: () => _scanBarcodeForEntry(entry),
+                  ),
+                ),
+                style: const TextStyle(fontSize: 13),
+              ),
             ),
           ],
         ),
