@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/fullscreen_image_viewer.dart';
 import '../inventory/inventory_providers.dart' show fmt, productImage, statusLabels;
+import '../inventory/status_actions.dart' show showEditDefectPhotosSheet;
 
 // ══════════════════════════════════════════════════
 // Providers
@@ -349,12 +350,12 @@ class _RejectionCard extends ConsumerWidget {
 // 공용 인라인 반려 카드 (현재하자 + 반려이력 공유)
 // ══════════════════════════════════════════════════
 
-class _InlineRejectionCard extends StatelessWidget {
+class _InlineRejectionCard extends ConsumerWidget {
   final InspectionRejectionData rejection;
   const _InlineRejectionCard({required this.rejection});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final defectLabel = switch (rejection.defectType) {
       'DEFECT_SALE' => '불량판매',
       'DEFECT_HELD' => '불량보류',
@@ -377,20 +378,37 @@ class _InlineRejectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── 반려 헤더: 시퀀스 + 유형 + 날짜 ──
+          // ── 반려 헤더: 시퀀스 + 유형 + 수정 + 날짜 ──
           Row(
             children: [
               const Icon(Icons.warning_amber,
                   size: 14, color: AppColors.warning),
               const SizedBox(width: 4),
-              Text(
-                '검수반려 #${rejection.returnSeq}  ·  $defectLabel',
-                style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.warning),
+              Expanded(
+                child: Text(
+                  '검수반려 #${rejection.returnSeq}  ·  $defectLabel',
+                  style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.warning),
+                ),
               ),
-              const Spacer(),
+              GestureDetector(
+                onTap: () async {
+                  final result = await showEditDefectPhotosSheet(
+                    context: context,
+                    ref: ref,
+                    rejection: rejection,
+                  );
+                  if (result == true) {
+                    ref.invalidate(_exInspectionsProvider);
+                    ref.invalidate(_allRejectionsProvider);
+                  }
+                },
+                child: const Icon(Icons.edit_outlined,
+                    size: 16, color: AppColors.warning),
+              ),
+              const SizedBox(width: 8),
               Text(dateStr,
                   style: const TextStyle(
                       fontSize: 11, color: AppColors.textTertiary)),

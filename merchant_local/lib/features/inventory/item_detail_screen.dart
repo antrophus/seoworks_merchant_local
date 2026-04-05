@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -526,12 +527,10 @@ class _ItemDetailBody extends ConsumerWidget {
                   color: AppColors.warning,
                   children: [
                     for (final ir in inspections) ...[
-                      _InfoRow('#${ir.returnSeq} 반려일', ir.rejectedAt),
-                      if (ir.reason != null) _InfoRow('사유', ir.reason!),
-                      if (ir.defectType != null) _InfoRow('유형', ir.defectType!),
-                      if (ir.discountAmount != null)
-                        _InfoRow('할인', '${_numFmt.format(ir.discountAmount)}원'),
-                      if (ir.memo != null) _InfoRow('메모', ir.memo!),
+                      _InspectionRejectionRow(
+                        rejection: ir,
+                        onEdited: () => ref.invalidate(_inspectionsProvider),
+                      ),
                       if (inspections.last != ir) const Divider(height: 12),
                     ],
                   ],
@@ -911,5 +910,116 @@ class _InfoRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ── 검수반려 행 (사진 + 수정 버튼 포함) ──
+
+class _InspectionRejectionRow extends ConsumerWidget {
+  final InspectionRejectionData rejection;
+  final VoidCallback onEdited;
+
+  const _InspectionRejectionRow({
+    required this.rejection,
+    required this.onEdited,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final photoUrls = _parsePhotoUrls(rejection.photoUrls);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '#${rejection.returnSeq} 반려일  ${rejection.rejectedAt}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            GestureDetector(
+              onTap: () async {
+                final result = await showEditDefectPhotosSheet(
+                  context: context,
+                  ref: ref,
+                  rejection: rejection,
+                );
+                if (result == true) onEdited();
+              },
+              child: const Icon(Icons.edit_outlined,
+                  size: 16, color: AppColors.warning),
+            ),
+          ],
+        ),
+        if (rejection.reason != null)
+          _InfoRow('사유', rejection.reason!),
+        if (rejection.defectType != null)
+          _InfoRow('유형', rejection.defectType!),
+        if (rejection.discountAmount != null)
+          _InfoRow('할인', '${_numFmt.format(rejection.discountAmount)}원'),
+        if (rejection.memo != null)
+          _InfoRow('메모', rejection.memo!),
+        if (photoUrls.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 4),
+            child: SizedBox(
+              height: 56,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: photoUrls.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (_, i) {
+                  final url = photoUrls[i];
+                  final isLocal = !url.startsWith('http');
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: isLocal
+                        ? Image.file(
+                            File(url),
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 56,
+                              height: 56,
+                              color: AppColors.surfaceVariant,
+                              child: const Icon(Icons.broken_image, size: 20),
+                            ),
+                          )
+                        : Image.network(
+                            url,
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 56,
+                              height: 56,
+                              color: AppColors.surfaceVariant,
+                              child: const Icon(Icons.broken_image, size: 20),
+                            ),
+                          ),
+                  );
+                },
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  static List<String> _parsePhotoUrls(String? raw) {
+    if (raw == null || raw.isEmpty) return [];
+    final trimmed = raw.trim();
+    if (trimmed.startsWith('[')) {
+      return trimmed
+          .substring(1, trimmed.length - 1)
+          .split(',')
+          .map((s) => s.trim().replaceAll('"', '').replaceAll("'", ''))
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return trimmed.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
   }
 }

@@ -306,12 +306,12 @@ final _latestRepairProvider =
 // 검수반려/수선 칩
 // ══════════════════════════════════════════════════
 
-class DefectChip extends StatelessWidget {
+class DefectChip extends ConsumerWidget {
   final InspectionRejectionData inspection;
   const DefectChip({super.key, required this.inspection});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final defectLabel = switch (inspection.defectType) {
       'DEFECT_SALE' => '불량판매',
       'DEFECT_HELD' => '불량보류',
@@ -337,16 +337,32 @@ class DefectChip extends StatelessWidget {
               children: [
                 const Icon(Icons.warning_amber, size: 14, color: AppColors.warning),
                 const SizedBox(width: 4),
-                Text(
-                  '검수반려 #${inspection.returnSeq} ($defectLabel)',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.warning,
+                Expanded(
+                  child: Text(
+                    '검수반려 #${inspection.returnSeq} ($defectLabel)',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.warning,
+                    ),
                   ),
                 ),
+                GestureDetector(
+                  onTap: () async {
+                    final result = await showEditDefectPhotosSheet(
+                      context: context,
+                      ref: ref,
+                      rejection: inspection,
+                    );
+                    if (result == true) {
+                      ref.invalidate(_latestInspectionProvider(inspection.itemId));
+                    }
+                  },
+                  child: const Icon(Icons.edit_outlined,
+                      size: 14, color: AppColors.warning),
+                ),
                 if (inspection.discountAmount != null) ...[
-                  const Spacer(),
+                  const SizedBox(width: 6),
                   Text(
                     '-${fmt.format(inspection.discountAmount)}원',
                     style: const TextStyle(

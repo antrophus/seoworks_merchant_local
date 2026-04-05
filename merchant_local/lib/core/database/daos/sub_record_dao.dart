@@ -78,6 +78,14 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
     );
   }
 
+  /// 검수 반려 수정 (사진, 사유, 메모 등)
+  Future<void> updateInspectionRejection(
+      String id, InspectionRejectionsCompanion entry) async {
+    await (update(inspectionRejections)..where((t) => t.id.equals(id))).write(
+      entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
+    );
+  }
+
   Future<void> insertAllInspectionRejections(
       List<InspectionRejectionsCompanion> entries) async {
     await batch((b) {

@@ -1662,3 +1662,366 @@ String _statusLabel(String status) => switch (status) {
       'SAMPLE' => '샘플',
       _ => status,
     };
+
+// ══════════════════════════════════════════════════
+// 하자 이미지 수정 바텀시트
+// ══════════════════════════════════════════════════
+
+Future<bool?> showEditDefectPhotosSheet({
+  required BuildContext context,
+  required WidgetRef ref,
+  required InspectionRejectionData rejection,
+}) {
+  return showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => _EditDefectPhotosSheet(ref: ref, rejection: rejection),
+  );
+}
+
+class _EditDefectPhotosSheet extends StatefulWidget {
+  final WidgetRef ref;
+  final InspectionRejectionData rejection;
+
+  const _EditDefectPhotosSheet({
+    required this.ref,
+    required this.rejection,
+  });
+
+  @override
+  State<_EditDefectPhotosSheet> createState() => _EditDefectPhotosSheetState();
+}
+
+class _EditDefectPhotosSheetState extends State<_EditDefectPhotosSheet> {
+  final _photoUrls = <String>[];
+  final _picker = ImagePicker();
+  final _urlCtrl = TextEditingController();
+  final _reasonCtrl = TextEditingController();
+  final _memoCtrl = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _photoUrls.addAll(_parsePhotoUrls(widget.rejection.photoUrls));
+    _reasonCtrl.text = widget.rejection.reason ?? '';
+    _memoCtrl.text = widget.rejection.memo ?? '';
+  }
+
+  @override
+  void dispose() {
+    _urlCtrl.dispose();
+    _reasonCtrl.dispose();
+    _memoCtrl.dispose();
+    super.dispose();
+  }
+
+  List<String> _parsePhotoUrls(String? raw) {
+    if (raw == null || raw.isEmpty) return [];
+    final trimmed = raw.trim();
+    if (trimmed.startsWith('[')) {
+      return trimmed
+          .substring(1, trimmed.length - 1)
+          .split(',')
+          .map((s) => s.trim().replaceAll('"', '').replaceAll("'", ''))
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    return trimmed.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+  }
+
+  Future<String> _saveToLocalStorage(String tempPath) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final photoDir = Directory(p.join(appDir.path, 'inspection_photos'));
+    if (!photoDir.existsSync()) photoDir.createSync(recursive: true);
+    final ext = p.extension(tempPath).isNotEmpty ? p.extension(tempPath) : '.jpg';
+    final destPath = p.join(photoDir.path, '${_uuid.v4()}$ext');
+    await File(tempPath).copy(destPath);
+    return destPath;
+  }
+
+  Future<void> _pickPhoto() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
+    if (file != null) {
+      final saved = await _saveToLocalStorage(file.path);
+      setState(() => _photoUrls.add(saved));
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      imageQuality: 85,
+    );
+    if (file != null) {
+      final saved = await _saveToLocalStorage(file.path);
+      setState(() => _photoUrls.add(saved));
+    }
+  }
+
+  void _addUrl() {
+    final url = _urlCtrl.text.trim();
+    if (url.isNotEmpty) {
+      setState(() {
+        _photoUrls.add(url);
+        _urlCtrl.clear();
+      });
+    }
+  }
+
+  void _removePhoto(int index) {
+    setState(() => _photoUrls.removeAt(index));
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+
+    await widget.ref.read(subRecordDaoProvider).updateInspectionRejection(
+          widget.rejection.id,
+          InspectionRejectionsCompanion(
+            photoUrls: Value(
+                _photoUrls.isNotEmpty ? jsonEncode(_photoUrls) : null),
+            reason: Value(
+                _reasonCtrl.text.isNotEmpty ? _reasonCtrl.text : null),
+            memo: Value(
+                _memoCtrl.text.isNotEmpty ? _memoCtrl.text : null),
+          ),
+        );
+
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final defectLabel = switch (widget.rejection.defectType) {
+      'DEFECT_SALE' => '불량판매',
+      'DEFECT_HELD' => '불량보류',
+      'DEFECT_RETURN' => '반송',
+      _ => widget.rejection.defectType ?? '검수반려',
+    };
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      expand: false,
+      builder: (ctx, sc) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '검수반려 #${widget.rejection.returnSeq} 수정',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.warning,
+                          ),
+                    ),
+                  ),
+                  Chip(
+                    label: Text(defectLabel,
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.warning)),
+                    backgroundColor: AppColors.warning.withAlpha(20),
+                    side: BorderSide.none,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context)),
+                ],
+              ),
+            ),
+            const Divider(),
+
+            Expanded(
+              child: ListView(
+                controller: sc,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  // 하자 사유
+                  TextField(
+                    controller: _reasonCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '하자 사유',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 하자 사진 섹션
+                  Text('하자 사진',
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 8),
+
+                  if (_photoUrls.isNotEmpty)
+                    SizedBox(
+                      height: 80,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _photoUrls.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: 8),
+                        itemBuilder: (_, i) {
+                          final url = _photoUrls[i];
+                          final isFile = !url.startsWith('http');
+                          return Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: isFile
+                                    ? Image.file(File(url),
+                                        width: 80,
+                                        height: 80,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            Container(
+                                          width: 80,
+                                          height: 80,
+                                          color: AppColors.surfaceVariant,
+                                          child: const Icon(
+                                              Icons.broken_image,
+                                              size: 24),
+                                        ))
+                                    : Image.network(url,
+                                        width: 80,
+                                        height: 80,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            Container(
+                                          width: 80,
+                                          height: 80,
+                                          color: AppColors.surfaceVariant,
+                                          child: const Icon(
+                                              Icons.broken_image,
+                                              size: 24),
+                                        )),
+                              ),
+                              Positioned(
+                                top: 2,
+                                right: 2,
+                                child: GestureDetector(
+                                  onTap: () => _removePhoto(i),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black54,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.close,
+                                        size: 14, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+
+                  const SizedBox(height: 8),
+
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _pickPhoto,
+                        icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                        label: const Text('촬영', style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _pickFromGallery,
+                        icon: const Icon(Icons.photo_library_outlined, size: 16),
+                        label: const Text('갤러리', style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _urlCtrl,
+                          decoration: const InputDecoration(
+                            hintText: '이미지 URL 입력 후 추가',
+                            isDense: true,
+                            prefixIcon: Icon(Icons.link, size: 18),
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 10),
+                          ),
+                          onSubmitted: (_) => _addUrl(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: _addUrl,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                        ),
+                        child: const Text('추가', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // 메모
+                  TextField(
+                    controller: _memoCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '메모 (선택)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: SafeArea(
+                top: false,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _submitting ? null : _submit,
+                    style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.warning),
+                    child: Text(_submitting ? '저장 중...' : '수정 완료'),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
