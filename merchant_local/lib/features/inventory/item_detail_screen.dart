@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -19,8 +20,8 @@ final _itemProvider = StreamProvider.family<ItemData?, String>((ref, id) {
 });
 
 final _purchaseProvider =
-    FutureProvider.family<PurchaseData?, String>((ref, itemId) {
-  return ref.watch(purchaseDaoProvider).getByItemId(itemId);
+    StreamProvider.family<PurchaseData?, String>((ref, itemId) {
+  return ref.watch(purchaseDaoProvider).watchByItemId(itemId);
 });
 
 final _sourceProvider =
@@ -28,33 +29,33 @@ final _sourceProvider =
   return ref.watch(masterDaoProvider).getSourceById(sourceId);
 });
 
-final _saleProvider = FutureProvider.family<SaleData?, String>((ref, itemId) {
-  return ref.watch(saleDaoProvider).getByItemId(itemId);
+final _saleProvider = StreamProvider.family<SaleData?, String>((ref, itemId) {
+  return ref.watch(saleDaoProvider).watchByItemId(itemId);
 });
 
 final _adjustmentsProvider =
-    FutureProvider.family<List<SaleAdjustmentData>, String>((ref, saleId) {
-  return ref.watch(saleDaoProvider).getAdjustments(saleId);
+    StreamProvider.family<List<SaleAdjustmentData>, String>((ref, saleId) {
+  return ref.watch(saleDaoProvider).watchAdjustments(saleId);
 });
 
 final _statusLogsProvider =
-    FutureProvider.family<List<StatusLogData>, String>((ref, itemId) {
-  return ref.watch(subRecordDaoProvider).getStatusLogs(itemId);
+    StreamProvider.family<List<StatusLogData>, String>((ref, itemId) {
+  return ref.watch(subRecordDaoProvider).watchStatusLogs(itemId);
 });
 
 final _shipmentsProvider =
-    FutureProvider.family<List<ShipmentData>, String>((ref, itemId) {
-  return ref.watch(subRecordDaoProvider).getShipments(itemId);
+    StreamProvider.family<List<ShipmentData>, String>((ref, itemId) {
+  return ref.watch(subRecordDaoProvider).watchShipments(itemId);
 });
 
 final _inspectionsProvider =
-    FutureProvider.family<List<InspectionRejectionData>, String>((ref, itemId) {
-  return ref.watch(subRecordDaoProvider).getInspectionRejections(itemId);
+    StreamProvider.family<List<InspectionRejectionData>, String>((ref, itemId) {
+  return ref.watch(subRecordDaoProvider).watchInspectionRejections(itemId);
 });
 
 final _repairsProvider =
-    FutureProvider.family<List<RepairData>, String>((ref, itemId) {
-  return ref.watch(subRecordDaoProvider).getRepairs(itemId);
+    StreamProvider.family<List<RepairData>, String>((ref, itemId) {
+  return ref.watch(subRecordDaoProvider).watchRepairs(itemId);
 });
 
 final _productProvider =
@@ -99,15 +100,14 @@ class ItemDetailScreen extends ConsumerWidget {
                 ref: ref,
                 item: item,
               );
-              if (result == true) {
-                ref.invalidate(_itemProvider);
-                ref.invalidate(_purchaseProvider);
-                ref.invalidate(_saleProvider);
-                ref.invalidate(_statusLogsProvider);
-                ref.invalidate(_shipmentsProvider);
-                ref.invalidate(_inspectionsProvider);
-                ref.invalidate(_repairsProvider);
-              }
+              if (!context.mounted || result != true) return;
+              ref.invalidate(_itemProvider);
+              ref.invalidate(_purchaseProvider);
+              ref.invalidate(_saleProvider);
+              ref.invalidate(_statusLogsProvider);
+              ref.invalidate(_shipmentsProvider);
+              ref.invalidate(_inspectionsProvider);
+              ref.invalidate(_repairsProvider);
             },
             tooltip: '상태 변경',
             child: const Icon(Icons.swap_vert_rounded),
@@ -203,7 +203,7 @@ class _ItemDetailBody extends ConsumerWidget {
                             final result = await context.push(
                               '/item/${item.id}/edit?productId=${product.id}',
                             );
-                            if (result == true) {
+                            if (context.mounted && result == true) {
                               ref.invalidate(_productProvider);
                             }
                           },
@@ -274,7 +274,8 @@ class _ItemDetailBody extends ConsumerWidget {
                 );
               },
               loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
+              error: (e, _) => const Text('상품 정보 로드 실패',
+                  style: TextStyle(color: AppColors.error, fontSize: 12)),
             ),
           ),
         ),
@@ -294,7 +295,9 @@ class _ItemDetailBody extends ConsumerWidget {
                       onPressed: () async {
                         final result =
                             await context.push('/item/${item.id}/purchase');
-                        if (result == true) ref.invalidate(_purchaseProvider);
+                        if (context.mounted && result == true) {
+                          ref.invalidate(_purchaseProvider);
+                        }
                       },
                       icon: const Icon(Icons.add),
                       label: const Text('매입 등록'),
@@ -314,7 +317,9 @@ class _ItemDetailBody extends ConsumerWidget {
                     onPressed: () async {
                       final result = await context.push(
                           '/item/${item.id}/purchase?edit=${purchase.id}');
-                      if (result == true) ref.invalidate(_purchaseProvider);
+                      if (context.mounted && result == true) {
+                        ref.invalidate(_purchaseProvider);
+                      }
                     },
                   ),
                   children: [
@@ -335,7 +340,8 @@ class _ItemDetailBody extends ConsumerWidget {
                 );
               },
               loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
+              error: (e, _) => const Text('매입 정보 로드 실패',
+                  style: TextStyle(color: AppColors.error, fontSize: 12)),
             ),
           ),
         ),
@@ -353,7 +359,9 @@ class _ItemDetailBody extends ConsumerWidget {
                       onPressed: () async {
                         final result =
                             await context.push('/item/${item.id}/sale');
-                        if (result == true) ref.invalidate(_saleProvider);
+                        if (context.mounted && result == true) {
+                          ref.invalidate(_saleProvider);
+                        }
                       },
                       icon: const Icon(Icons.add),
                       label: const Text('판매 등록'),
@@ -365,8 +373,7 @@ class _ItemDetailBody extends ConsumerWidget {
                 }
 
                 final profitWidgets = <Widget>[];
-                final purchaseData = ref.watch(_purchaseProvider(item.id));
-                purchaseData.whenData((purchase) {
+                purchaseAsync.whenData((purchase) {
                   if (purchase?.purchasePrice != null &&
                       sale.settlementAmount != null) {
                     final profit = sale.settlementAmount! -
@@ -396,7 +403,9 @@ class _ItemDetailBody extends ConsumerWidget {
                     onPressed: () async {
                       final result = await context
                           .push('/item/${item.id}/sale?edit=${sale.id}');
-                      if (result == true) ref.invalidate(_saleProvider);
+                      if (context.mounted && result == true) {
+                        ref.invalidate(_saleProvider);
+                      }
                     },
                   ),
                   children: [
@@ -453,7 +462,8 @@ class _ItemDetailBody extends ConsumerWidget {
                 );
               },
               loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
+              error: (e, _) => const Text('판매 정보 로드 실패',
+                  style: TextStyle(color: AppColors.error, fontSize: 12)),
             ),
           ),
         ),
@@ -493,12 +503,11 @@ class _ItemDetailBody extends ConsumerWidget {
                               ],
                             ),
                           );
-                          if (confirmed == true) {
-                            await ref
-                                .read(subRecordDaoProvider)
-                                .deleteShipment(s.id);
-                            ref.invalidate(_shipmentsProvider);
-                          }
+                          if (!context.mounted || confirmed != true) return;
+                          await ref
+                              .read(subRecordDaoProvider)
+                              .deleteShipment(s.id);
+                          ref.invalidate(_shipmentsProvider);
                         },
                         child: _InfoRow(
                           '#${s.seq} ${s.platform ?? ''}',
@@ -946,7 +955,7 @@ class _InspectionRejectionRow extends ConsumerWidget {
                   ref: ref,
                   rejection: rejection,
                 );
-                if (result == true) onEdited();
+                if (context.mounted && result == true) onEdited();
               },
               child: const Icon(Icons.edit_outlined,
                   size: 16, color: AppColors.warning),
@@ -1010,15 +1019,14 @@ class _InspectionRejectionRow extends ConsumerWidget {
   }
 
   static List<String> _parsePhotoUrls(String? raw) {
-    if (raw == null || raw.isEmpty) return [];
+    if (raw == null || raw.trim().isEmpty) return [];
     final trimmed = raw.trim();
     if (trimmed.startsWith('[')) {
-      return trimmed
-          .substring(1, trimmed.length - 1)
-          .split(',')
-          .map((s) => s.trim().replaceAll('"', '').replaceAll("'", ''))
-          .where((s) => s.isNotEmpty)
-          .toList();
+      try {
+        return (jsonDecode(trimmed) as List).cast<String>();
+      } catch (_) {
+        // fallback: comma split
+      }
     }
     return trimmed.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
   }

@@ -17,6 +17,13 @@ class PurchaseDao extends DatabaseAccessor<AppDatabase>
                 t.itemId.equals(itemId) & t.isDeleted.equals(false)))
           .getSingleOrNull();
 
+  /// item_id로 매입 실시간 감시
+  Stream<PurchaseData?> watchByItemId(String itemId) =>
+      (select(purchases)
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false)))
+          .watchSingleOrNull();
+
   /// 매입 등록 (부가세 환급액 자동 계산)
   Future<void> insertPurchase(PurchasesCompanion entry) async {
     final computed = await _computeVatRefundable(entry);

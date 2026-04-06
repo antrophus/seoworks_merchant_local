@@ -35,6 +35,13 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
             ..orderBy([(t) => OrderingTerm.desc(t.changedAt)]))
           .get();
 
+  Stream<List<StatusLogData>> watchStatusLogs(String itemId) =>
+      (select(statusLogs)
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.desc(t.changedAt)]))
+          .watch();
+
   /// 최근 상태 변경 로그 (대시보드용)
   Future<List<StatusLogData>> getRecentStatusLogs({int limit = 8}) =>
       (select(statusLogs)
@@ -57,6 +64,14 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
                 t.itemId.equals(itemId) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.returnSeq)]))
           .get();
+
+  Stream<List<InspectionRejectionData>> watchInspectionRejections(
+          String itemId) =>
+      (select(inspectionRejections)
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.asc(t.returnSeq)]))
+          .watch();
 
   /// 검수 반려 등록 (순번 자동 생성)
   Future<void> addInspectionRejection(
@@ -102,6 +117,13 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
             ..orderBy([(t) => OrderingTerm.desc(t.startedAt)]))
           .get();
 
+  Stream<List<RepairData>> watchRepairs(String itemId) =>
+      (select(repairs)
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.desc(t.startedAt)]))
+          .watch();
+
   Future<void> insertRepair(RepairsCompanion entry) =>
       into(repairs).insert(
         entry.copyWith(hlc: Value(db.hlcClock?.increment().toString() ?? '')),
@@ -133,6 +155,13 @@ class SubRecordDao extends DatabaseAccessor<AppDatabase>
                 t.itemId.equals(itemId) & t.isDeleted.equals(false))
             ..orderBy([(t) => OrderingTerm.asc(t.seq)]))
           .get();
+
+  Stream<List<ShipmentData>> watchShipments(String itemId) =>
+      (select(shipments)
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false))
+            ..orderBy([(t) => OrderingTerm.asc(t.seq)]))
+          .watch();
 
   /// 배송 등록 (순번 자동 생성)
   Future<void> addShipment(ShipmentsCompanion entry) async {

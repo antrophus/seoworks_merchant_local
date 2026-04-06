@@ -34,6 +34,13 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
                 t.itemId.equals(itemId) & t.isDeleted.equals(false)))
           .getSingleOrNull();
 
+  /// item_id로 판매 실시간 감시
+  Stream<SaleData?> watchByItemId(String itemId) =>
+      (select(sales)
+            ..where((t) =>
+                t.itemId.equals(itemId) & t.isDeleted.equals(false)))
+          .watchSingleOrNull();
+
   /// 플랫폼별 판매 목록
   Stream<List<SaleData>> watchByPlatform(String platform) =>
       (select(sales)
@@ -183,6 +190,13 @@ class SaleDao extends DatabaseAccessor<AppDatabase> with _$SaleDaoMixin {
             ..where((t) =>
                 t.saleId.equals(saleId) & t.isDeleted.equals(false)))
           .get();
+
+  /// 조정금 실시간 감시
+  Stream<List<SaleAdjustmentData>> watchAdjustments(String saleId) =>
+      (select(saleAdjustments)
+            ..where((t) =>
+                t.saleId.equals(saleId) & t.isDeleted.equals(false)))
+          .watch();
 
   /// 판매 내역 목록 (아이템+상품 JOIN, 필터 지원)
   Future<List<SaleWithItem>> getSalesWithItems({
